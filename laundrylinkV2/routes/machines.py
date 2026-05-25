@@ -121,8 +121,17 @@ def _json_api_guard(handler):
 @machines_bp.route("/machines", methods=["GET"])
 def list_machines():
     machines = get_all_machines()
-    for m in machines:
+    
+    # Check machine statuses in parallel to prevent long load times
+    # when multiple offline machines are timing out.
+    import concurrent.futures
+    def fetch_status(m):
         m["status"] = get_esp32_status(m["esp32_ip"])
+        return m
+        
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        machines = list(executor.map(fetch_status, machines))
+        
     return jsonify(machines)
 
 
