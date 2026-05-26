@@ -553,10 +553,10 @@ def _build_analytics(transactions, machines, start_date=None, end_date=None):
         eff_date_str = t.get("started_at")
         machine_id = t.get("machine_id")
         amount = int(t.get("amount") or 0)
-        status = t.get("status")
+        status = str(t.get("status") or "").upper()
         net_amount = amount - int(t.get("service_total") or 0)
 
-        if status == "COMPLETED":
+        if status in ("COMPLETED", "SIMULATED"):
             if t.get("gcash_amount") is not None:
                 gcash = int(t.get("gcash_amount") or 0)
             else:
@@ -574,7 +574,7 @@ def _build_analytics(transactions, machines, start_date=None, end_date=None):
         cycles_by_day_map[day] += 1
         usage_map[machine_id]["cycles"] += 1
 
-        if status == "COMPLETED":
+        if status in ("COMPLETED", "SIMULATED"):
             revenue_by_day_map[day] += net_amount
             usage_map[machine_id]["revenue"] += net_amount
 
@@ -681,7 +681,7 @@ def _fetch_transactions_by_day(day_str):
         SELECT *
         FROM transactions
         WHERE started_at >= ? AND started_at <= ?
-          AND status IN ('COMPLETED', 'SIMULATED')
+          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
         ORDER BY started_at ASC
         """,
         (day_start, day_end),
@@ -701,7 +701,7 @@ def _get_transactions_for_date_range(start_date=None, end_date=None):
         SELECT *
         FROM transactions
         WHERE started_at >= ? AND started_at <= ?
-          AND status IN ('COMPLETED', 'SIMULATED')
+          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
         ORDER BY started_at ASC
         """,
         (from_str, to_str),
@@ -1027,7 +1027,7 @@ def _build_calendar_summary(year, month):
         SELECT id, substr(started_at, 1, 10) AS tx_day, amount, service_total, status
         FROM transactions
         WHERE started_at >= ? AND started_at <= ?
-          AND status IN ('COMPLETED', 'SIMULATED')
+          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
         """,
         (month_start, month_end),
     ).fetchall()

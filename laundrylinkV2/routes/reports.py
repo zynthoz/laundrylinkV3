@@ -590,7 +590,7 @@ def _build_shift_receipt_data(shift_id):
         SELECT id, machine_id, amount, status, started_at, product_total, service_total,
                paid_by_gcash, gcash_amount
         FROM transactions
-        WHERE shift_id = ? AND status IN ('COMPLETED', 'SIMULATED')
+        WHERE shift_id = ? AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
         ORDER BY started_at ASC
         """,
         (shift_id,),
@@ -755,7 +755,7 @@ def _build_day_receipt_data(day_str):
                paid_by_gcash, gcash_amount
         FROM transactions
         WHERE started_at >= ? AND started_at <= ?
-          AND status IN ('COMPLETED', 'SIMULATED')
+          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
         ORDER BY started_at ASC
         """,
         (day_start, day_end),
@@ -767,7 +767,7 @@ def _build_day_receipt_data(day_str):
         FROM transactions t
         LEFT JOIN employees e ON e.id = t.employee_id
         WHERE t.started_at >= ? AND t.started_at <= ?
-          AND t.status IN ('COMPLETED', 'SIMULATED')
+          AND UPPER(t.status) IN ('COMPLETED', 'SIMULATED')
         """,
         (day_start, day_end),
     ).fetchall()
