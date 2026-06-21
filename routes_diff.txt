@@ -1,0 +1,2236 @@
+diff -ur /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/dashboard.py /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/dashboard.py
+--- /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/dashboard.py	2026-06-21 21:37:41.876962647 +0800
++++ /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/dashboard.py	2026-06-21 22:03:24.145968980 +0800
+@@ -18,10 +18,12 @@
+     create_job_orders_bulk,
+     delete_job_order,
+     delete_transactions,
++    delete_machines,
+     get_active_shift,
+     get_all_machines,
+     get_active_service_by_name,
+     get_connection,
++    get_email_settings,
+     get_job_order,
+     get_machine,
+     get_receipt_format_config,
+@@ -36,6 +38,7 @@
+     summarize_post_cycle_payment_logs,
+     list_customers,
+     list_manual_expenses,
++    set_email_settings,
+     set_machine_run_window,
+     upsert_customer,
+     set_recent_shift_summary_count,
+@@ -45,6 +48,14 @@
+     save_receipt_overrides,
+     revert_job_order_usage,
+     update_machine_status,
++    list_promos,
++    create_promo,
++    update_promo,
++    delete_promo,
++    get_day_change_time,
++    set_day_change_time,
++    get_analytics_settings,
++    set_analytics_settings,
+ )
+ from routes.security import require_admin_pin
+ from services.esp32 import check_esp32_life, get_esp32_status, send_pulse, async_send_pulse
+@@ -67,14 +78,37 @@
+ 
+ 
+ def _operational_day_window(day_str):
++    change_time = get_day_change_time()
++    try:
++        parts = change_time.split(":")
++        hh = int(parts[0])
++        mm = int(parts[1])
++    except Exception:
++        hh = 8
++        mm = 1
++
++    dt_start = datetime.strptime(day_str, "%Y-%m-%d") + timedelta(hours=hh, minutes=mm)
++    dt_end = dt_start + timedelta(days=1) - timedelta(seconds=1)
+     return (
+-        f"{day_str} 00:00:00",
+-        f"{day_str} 23:59:59",
++        dt_start.strftime("%Y-%m-%d %H:%M:%S"),
++        dt_end.strftime("%Y-%m-%d %H:%M:%S")
+     )
+ 
+ 
+ def _current_operational_day_str():
+-    return datetime.now().strftime("%Y-%m-%d")
++    change_time = get_day_change_time()
++    try:
++        parts = change_time.split(":")
++        hh = int(parts[0])
++        mm = int(parts[1])
++    except Exception:
++        hh = 8
++        mm = 1
++    now = datetime.now()
++    day_start_today = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
++    if now < day_start_today:
++        return (now - timedelta(days=1)).strftime("%Y-%m-%d")
++    return now.strftime("%Y-%m-%d")
+ 
+ 
+ def _json_api_guard(handler):
+@@ -160,38 +194,56 @@
+     return 400
+ 
+ 
+-def _vend_price_by_machine_type(machine_type):
++def _price_by_machine_type(machine_type, mode_id, machine=None):
+     mtype = str(machine_type or "").strip().lower()
+-    if mtype not in ("washer", "dryer"):
+-        return 0
+-
+-    machines = get_all_machines()
+-    matching = [m for m in machines if str(m.get("type") or "").strip().lower() == mtype]
+-    if not matching:
+-        return 0
+-    return max(0, int(matching[0].get("vend_price") or 0))
++    mode_id = str(mode_id or "standard").strip().lower()
+ 
++    if not machine:
++        machines = get_all_machines()
++        matching = [m for m in machines if str(m.get("type") or "").strip().lower() == mtype]
++        if matching:
++            machine = matching[0]
+ 
+-def _quick_price_by_machine_type(machine_type):
+-    mtype = str(machine_type or "").strip().lower()
+-    if mtype not in ("washer", "dryer"):
++    if not machine:
+         return 0
+ 
+-    machines = get_all_machines()
+-    matching = [m for m in machines if str(m.get("type") or "").strip().lower() == mtype]
+-    if not matching:
+-        return 0
+-    first = matching[0]
+-    return max(0, int(first.get("quick_wash_price") or first.get("vend_price") or 0))
++    custom_modes_str = machine.get("custom_modes")
++    if custom_modes_str:
++        try:
++            import json
++            modes = json.loads(custom_modes_str)
++            for m in modes:
++                if str(m.get("id")).lower() == mode_id:
++                    return max(0, int(m.get("price") or 0))
++        except Exception:
++            pass
++            
++    if mode_id == "quick":
++        return max(0, int(machine.get("quick_wash_price") or machine.get("vend_price") or 0))
++    return max(0, int(machine.get("vend_price") or 0))
+ 
+ 
+ def _normalize_job_order_mode(mode_value):
+-    normalized = str(mode_value or "normal").strip().lower()
+-    return normalized if normalized in ("normal", "quick") else "normal"
++    return str(mode_value or "standard").strip().lower()
+ 
+ 
+ def _resolve_activation_profile(machine, activation_mode):
+     selected_mode = str(activation_mode or "standard").strip().lower()
++    custom_modes_json = machine.get("custom_modes")
++    
++    if custom_modes_json:
++        try:
++            import json
++            modes = json.loads(custom_modes_json)
++            for m in modes:
++                if str(m.get("id")).lower() == selected_mode:
++                    pulse_count = max(1, int(m.get("pulse_count") or 1))
++                    base_amount = max(0, int(m.get("price") or 0))
++                    return selected_mode, pulse_count, base_amount, m.get("products") or [], m.get("services") or []
++        except Exception:
++            pass
++
++    # Fallback to legacy
+     if selected_mode not in ("standard", "quick"):
+         selected_mode = "standard"
+ 
+@@ -199,10 +251,10 @@
+         pulse_count = max(1, int(machine.get("quick_wash_pulse_count") or 1))
+         base_amount = max(0, int(machine.get("quick_wash_price") or machine.get("vend_price") or 0))
+     else:
+-        pulse_count = int(machine["pulse_count"])
++        pulse_count = int(machine.get("pulse_count") or 2)
+         base_amount = max(0, int(machine.get("vend_price") or 0))
+ 
+-    return selected_mode, pulse_count, base_amount
++    return selected_mode, pulse_count, base_amount, [], []
+ 
+ 
+ def _activate_machine_with_sale(
+@@ -214,7 +266,30 @@
+     paid_by_gcash,
+     activation_mode,
+ ):
+-    selected_mode, pulse_count, base_amount = _resolve_activation_profile(machine, activation_mode)
++    selected_mode, pulse_count, base_amount, custom_products, custom_services = _resolve_activation_profile(machine, activation_mode)
++    
++    # Merge bundled items from custom modes
++    for cp in custom_products:
++        item_id = str(cp.get("id") or "").strip()
++        qty = int(cp.get("qty") or 0)
++        if item_id and qty > 0:
++            sale_items.append({
++                "kind": "product",
++                "item_id": item_id,
++                "quantity": qty,
++                "unit_price": 0
++            })
++    for cs in custom_services:
++        item_id = str(cs.get("id") or "").strip()
++        qty = int(cs.get("qty") or 0)
++        if item_id and qty > 0:
++            sale_items.append({
++                "kind": "service",
++                "item_id": item_id,
++                "quantity": qty,
++                "unit_price": 0
++            })
++
+     timestamp = _now_str()
+     import uuid
+ 
+@@ -236,6 +311,13 @@
+         paid_by_gcash=paid_by_gcash,
+     )
+ 
++    if customer_payload and customer_payload.get("customer_id"):
++        increment_customer_order_count(
++            customer_id=customer_payload["customer_id"],
++            machine_type=machine.get("type"),
++            quantity=1
++        )
++
+     run_ends_at = (datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=MACHINE_RUN_SECONDS)).strftime("%Y-%m-%d %H:%M:%S")
+     set_machine_run_window(machine["id"], timestamp, run_ends_at)
+ 
+@@ -286,8 +368,8 @@
+     }
+ 
+ 
+-def _get_transactions(limit=2000):
+-    return get_recent_transactions(limit=limit)
++def _get_transactions(limit=None, offset=0):
++    return get_recent_transactions(limit=limit, offset=offset)
+ 
+ 
+ def _enrich_machines(raw_machines):
+@@ -302,6 +384,8 @@
+ 
+ def _enrich_transactions(raw_transactions):
+     enriched = []
++    all_txn_ids = []
++
+     for t in raw_transactions:
+         row = dict(t)
+         request_id = str(row.get("request_id") or "").strip()
+@@ -313,7 +397,47 @@
+         row["location_name"] = "Local Pi"
+         row["is_bulk_activation"] = is_bulk
+         row["bulk_group_id"] = bulk_group_id
++        row["addon_items"] = []
++        tid = str(row.get("id") or "").strip()
++        if tid:
++            all_txn_ids.append(tid)
+         enriched.append(row)
++
++    # Batch-fetch items for all transactions in one query
++    if all_txn_ids:
++        conn = get_connection()
++        try:
++            placeholders = ",".join("?" for _ in all_txn_ids)
++            rows = conn.execute(
++                f"""
++                SELECT transaction_id, item_type, item_name, quantity, unit_price, line_total
++                FROM transaction_items
++                WHERE transaction_id IN ({placeholders})
++                ORDER BY transaction_id, item_type, item_name
++                """,
++                all_txn_ids,
++            ).fetchall()
++        finally:
++            conn.close()
++
++        items_by_txn = {}
++        for r in rows:
++            tid = r["transaction_id"]
++            if tid not in items_by_txn:
++                items_by_txn[tid] = []
++            items_by_txn[tid].append({
++                "item_type": r["item_type"],
++                "item_name": r["item_name"],
++                "quantity": int(r["quantity"] or 0),
++                "unit_price": int(r["unit_price"] or 0),
++                "line_total": int(r["line_total"] or 0),
++            })
++
++        for row in enriched:
++            tid = str(row.get("id") or "").strip()
++            if tid in items_by_txn:
++                row["addon_items"] = items_by_txn[tid]
++
+     return enriched
+ 
+ 
+@@ -322,12 +446,11 @@
+     today_revenue = 0
+ 
+     for t in transactions:
+-        try:
+-            started = datetime.strptime(t["started_at"], "%Y-%m-%d %H:%M:%S").date()
+-        except (ValueError, TypeError):
+-            continue
++        started = t.get("started_at")
++        if started:
++            started = started[:10]
+ 
+-        if started == today and t.get("status") == "COMPLETED":
++        if started == str(today) and t.get("status") == "COMPLETED":
+             today_revenue += int(t.get("amount") or 0)
+ 
+     return {
+@@ -427,7 +550,7 @@
+     usage = {}
+     for txn in transactions or []:
+         machine_id = str(txn.get("machine_id") or "").strip()
+-        if not machine_id:
++        if not machine_id or machine_id == "post-cycle-addons":
+             continue
+ 
+         amount = int(txn.get("amount") or 0)
+@@ -460,14 +583,27 @@
+     ]
+ 
+     txn_ids = [str(t.get("id") or "").strip() for t in valid_sales if str(t.get("id") or "").strip()]
++
++    # Fetch job orders first so we can extract their IDs
++    if start_date or end_date:
++        from_str = f"{start_date.strftime('%Y-%m-%d')} 00:00:00" if start_date else "0000-01-01 00:00:00"
++        to_str = f"{end_date.strftime('%Y-%m-%d')} 23:59:59" if end_date else "9999-12-31 23:59:59"
++        job_orders = _fetch_job_orders_for_day(from_str, to_str)
++    else:
++        job_orders = _fetch_job_orders_for_day("0000-01-01 00:00:00", "9999-12-31 23:59:59")
++        
++    job_order_ids = [jo["id"] for jo in job_orders if jo.get("id")]
++
+     item_usage = _fetch_item_usage(txn_ids)
+     item_breakdown = _fetch_item_breakdown(txn_ids)
+ 
+     gross_collected = sum(int(t.get("amount") or 0) for t in valid_sales)
+     product_revenue = sum(int(t.get("product_total") or 0) for t in valid_sales)
+-    service_revenue = sum(int(t.get("service_total") or 0) for t in valid_sales)
+-    total_sales = gross_collected - service_revenue
+-    machine_revenue = total_sales - product_revenue
++    # Track transaction-native service revenue separately — these are already embedded in
++    # gross_collected (txn.amount includes them), so they're the only portion valid for
++    # cash/net adjustments.
++    txn_service_revenue = sum(int(t.get("service_total") or 0) for t in valid_sales)
++    service_revenue = txn_service_revenue
+ 
+     txn_gcash_revenue = 0
+     txn_gcash_count = 0
+@@ -494,12 +630,20 @@
+     post_cycle_transfer_amount = int(post_cycle.get("amount") or 0)
+     post_cycle_transfer_count = int(post_cycle.get("count") or 0)
+ 
++    total_sales = gross_collected
++    machine_revenue = max(0, total_sales - product_revenue - service_revenue)
++
+     manual_expenses = _sum_manual_expenses(start_date=start_date, end_date=end_date)
+     total_expenses = manual_expenses + int(item_usage.get("cogs_total") or 0)
+     gcash_revenue = txn_gcash_revenue + post_cycle_transfer_amount
+-    cash_sales = total_sales - gcash_revenue
++
++    analytics_settings = get_analytics_settings()
++    include_service_in_net = bool(analytics_settings.get("include_service_revenue_in_net", False))
++    _svc_adj = 0 if include_service_in_net else -txn_service_revenue
++
++    cash_sales = total_sales + _svc_adj - gcash_revenue
+     cash_revenue = cash_sales - total_expenses
+-    net_sales = total_sales - total_expenses
++    net_sales = total_sales + _svc_adj - total_expenses
+ 
+     expense_breakdown = _group_manual_expenses(start_date=start_date, end_date=end_date)
+     if int(item_usage.get("cogs_total") or 0) > 0:
+@@ -526,7 +670,7 @@
+         "manual_expenses": manual_expenses,
+         "cogs_total": int(item_usage.get("cogs_total") or 0),
+         "total_expenses": total_expenses,
+-        "net_sales": net_sales,
++        "net_sales": total_sales - total_expenses,
+         "post_cycle_transfer_amount": post_cycle_transfer_amount,
+         "post_cycle_transfer_count": post_cycle_transfer_count,
+         "machine_usage_breakdown": _build_machine_usage_breakdown(valid_sales, machines),
+@@ -537,7 +681,8 @@
+ 
+ 
+ def _build_analytics(transactions, machines, start_date=None, end_date=None):
+-    total_revenue = sum((int(t.get("amount") or 0) - int(t.get("service_total") or 0)) for t in transactions if t.get("status") == "COMPLETED")
++    valid_sales = [t for t in transactions if t.get("status") == "COMPLETED"]
++    total_revenue = sum(int(t.get("amount") or 0) for t in valid_sales)
+     total_cycles = len(transactions)
+     avg_per_cycle = round(total_revenue / total_cycles) if total_cycles else 0
+     gcash_collected = 0
+@@ -549,22 +694,11 @@
+ 
+     machine_name_by_id = {m["id"]: m.get("name", m["id"]) for m in machines}
+ 
+-    for t in transactions:
++    for t in valid_sales:
+         eff_date_str = t.get("started_at")
+         machine_id = t.get("machine_id")
+         amount = int(t.get("amount") or 0)
+-        status = str(t.get("status") or "").upper()
+-        net_amount = amount - int(t.get("service_total") or 0)
+-
+-        if status in ("COMPLETED", "SIMULATED"):
+-            if t.get("gcash_amount") is not None:
+-                gcash = int(t.get("gcash_amount") or 0)
+-            else:
+-                gcash = amount if int(t.get("paid_by_gcash") or 0) == 1 else 0
+-            bounded_gcash = max(0, min(gcash, amount))
+-            gcash_collected += bounded_gcash
+-            if bounded_gcash > 0:
+-                gcash_transaction_count += 1
++        status = t.get("status")
+ 
+         try:
+             day = datetime.strptime(eff_date_str, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d")
+@@ -574,10 +708,18 @@
+         cycles_by_day_map[day] += 1
+         usage_map[machine_id]["cycles"] += 1
+ 
+-        if status in ("COMPLETED", "SIMULATED"):
+-            revenue_by_day_map[day] += net_amount
+-            usage_map[machine_id]["revenue"] += net_amount
+-
++        if status == "COMPLETED":
++            revenue_by_day_map[day] += amount
++            usage_map[machine_id]["revenue"] += amount
++            if t.get("gcash_amount") is not None:
++                gcash = int(t.get("gcash_amount") or 0)
++            else:
++                gcash = amount if int(t.get("paid_by_gcash") or 0) == 1 else 0
++            bounded_gcash = max(0, min(gcash, amount))
++            gcash_collected += bounded_gcash
++            if bounded_gcash > 0:
++                gcash_transaction_count += 1
++                    
+     if start_date or end_date:
+         from_str = f"{start_date.strftime('%Y-%m-%d')} 00:00:00" if start_date else "0000-01-01 00:00:00"
+         to_str = f"{end_date.strftime('%Y-%m-%d')} 23:59:59" if end_date else "9999-12-31 23:59:59"
+@@ -590,6 +732,9 @@
+     gcash_collected += post_cycle_amount
+     gcash_transaction_count += post_cycle_count
+ 
++    # NOTE: The linked transaction already has gcash_amount / paid_by_gcash set correctly,
++    # so we do NOT add jo.total_amount here — that would double-count GCash revenue.
++
+     receipt_data = _build_analytics_receipt_snapshot(
+         transactions,
+         machines,
+@@ -621,7 +766,6 @@
+     machine_usage.sort(key=lambda x: x["cycles"], reverse=True)
+ 
+     gcash_share_pct = round((min(gcash_collected, total_revenue) / total_revenue) * 100) if total_revenue else 0
+-    # receipt_data already built above
+ 
+     return {
+         "total_revenue": total_revenue,
+@@ -681,7 +825,7 @@
+         SELECT *
+         FROM transactions
+         WHERE started_at >= ? AND started_at <= ?
+-          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
++          AND status IN ('COMPLETED', 'SIMULATED')
+         ORDER BY started_at ASC
+         """,
+         (day_start, day_end),
+@@ -701,7 +845,7 @@
+         SELECT *
+         FROM transactions
+         WHERE started_at >= ? AND started_at <= ?
+-          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
++          AND status IN ('COMPLETED', 'SIMULATED')
+         ORDER BY started_at ASC
+         """,
+         (from_str, to_str),
+@@ -774,35 +918,43 @@
+ 
+     conn = get_connection()
+     placeholders = ",".join("?" for _ in txn_ids)
+-    rows = conn.execute(
++    raw_rows = conn.execute(
+         f"""
+-        SELECT item_type, item_name, SUM(quantity) AS qty, SUM(line_total) AS total
++        SELECT item_type, item_name, quantity AS qty, line_total AS total
+         FROM transaction_items
+         WHERE transaction_id IN ({placeholders})
+-        GROUP BY item_type, item_name
+-        ORDER BY item_type ASC, item_name ASC
+         """,
+         txn_ids,
+     ).fetchall()
+     conn.close()
+ 
++    aggregated = {}
++    for row in raw_rows:
++        key = (row["item_type"], row["item_name"])
++        if key not in aggregated:
++            aggregated[key] = {"qty": 0, "total": 0}
++        aggregated[key]["qty"] += int(row["qty"] or 0)
++        aggregated[key]["total"] += int(row["total"] or 0)
++
+     out = {"product": [], "service": []}
+-    for row in rows:
+-        kind = row["item_type"]
++    for (kind, name), data in aggregated.items():
+         if kind not in out:
+             continue
+-        out[kind].append(
+-            {
+-                "name": row["item_name"],
+-                "qty": int(row["qty"] or 0),
+-                "total": int(row["total"] or 0),
+-            }
+-        )
++        out[kind].append({
++            "name": name,
++            "qty": data["qty"],
++            "total": data["total"],
++        })
++        
++    out["product"].sort(key=lambda x: x["name"])
++    out["service"].sort(key=lambda x: x["name"])
++    
+     return out
+ 
+ 
+-def _compute_cash_sales_and_net(total_sales, txn_gcash_revenue, post_cycle_transfer_amount, total_expenses):
+-    cash_sales = int(total_sales or 0) - int(txn_gcash_revenue or 0) - int(post_cycle_transfer_amount or 0)
++def _compute_cash_sales_and_net(total_sales, txn_gcash_revenue, post_cycle_transfer_amount, total_expenses, service_adjustment=0):
++    effective_sales = int(total_sales or 0) + int(service_adjustment or 0)
++    cash_sales = effective_sales - int(txn_gcash_revenue or 0) - int(post_cycle_transfer_amount or 0)
+     net_cash = cash_sales - int(total_expenses or 0)
+     return cash_sales, net_cash
+ 
+@@ -815,7 +967,7 @@
+     conn = get_connection()
+     rows = conn.execute(
+         """
+-        SELECT id, total_amount, paid_by_gcash
++        SELECT *
+         FROM job_orders
+         WHERE created_by_shift_id = ?
+            OR (
+@@ -836,7 +988,7 @@
+     conn = get_connection()
+     rows = conn.execute(
+         """
+-        SELECT id, total_amount, paid_by_gcash
++        SELECT *
+         FROM job_orders
+         WHERE created_at >= ? AND created_at <= ?
+         ORDER BY created_at ASC
+@@ -893,19 +1045,38 @@
+ 
+ 
+ def _build_sales_summary(transactions, label, selected_date=None, active_shift=None):
++    day_start = None
++    day_end = None
++    if selected_date:
++        day_start, day_end = _operational_day_window(selected_date)
++
++    if active_shift and active_shift.get("id"):
++        job_orders = _fetch_job_orders_for_shift(active_shift)
++        expense_rows = _fetch_expenses_for_shift(active_shift)
++    elif selected_date:
++        job_orders = _fetch_job_orders_for_day(day_start, day_end)
++        expense_rows = _fetch_expenses_for_day(day_start, day_end)
++    else:
++        job_orders = []
++        expense_rows = []
++
+     valid_sales = [
+         t for t in transactions
+         if t.get("status") in ("COMPLETED", "SIMULATED")
+     ]
+     txn_ids = [t["id"] for t in valid_sales]
++    job_order_ids = [t.get("job_order_id") for t in valid_sales if t.get("job_order_id")]
++    
+     item_usage = _fetch_item_usage(txn_ids)
+     item_breakdown = _fetch_item_breakdown(txn_ids)
+ 
+     gross_collected = sum(int(t.get("amount") or 0) for t in valid_sales)
+     product_revenue = sum(int(t.get("product_total") or 0) for t in valid_sales)
+-    service_revenue = sum(int(t.get("service_total") or 0) for t in valid_sales)
+-    total_sales = gross_collected - service_revenue
+-    machine_revenue = total_sales - product_revenue
++    # Track transaction-native service revenue — these are embedded in gross_collected.
++    # JO-sourced service items are NOT in gross_collected, so must not be used for
++    # cash/net adjustment to avoid double-counting.
++    txn_service_revenue = sum(int(t.get("service_total") or 0) for t in valid_sales)
++    service_revenue = txn_service_revenue
+ 
+     txn_gcash_revenue = 0
+     txn_gcash_count = 0
+@@ -920,11 +1091,6 @@
+         if gcash > 0:
+             txn_gcash_count += 1
+ 
+-    day_start = None
+-    day_end = None
+-    if selected_date:
+-        day_start, day_end = _operational_day_window(selected_date)
+-
+     post_cycle = {"count": 0, "amount": 0}
+     if active_shift and active_shift.get("id"):
+         post_cycle = summarize_post_cycle_payment_logs(
+@@ -938,28 +1104,39 @@
+     post_cycle_amount = int(post_cycle.get("amount") or 0)
+     post_cycle_count = int(post_cycle.get("count") or 0)
+ 
+-    if active_shift and active_shift.get("id"):
+-        job_orders = _fetch_job_orders_for_shift(active_shift)
+-        expense_rows = _fetch_expenses_for_shift(active_shift)
+-    elif selected_date:
+-        job_orders = _fetch_job_orders_for_day(day_start, day_end)
+-        expense_rows = _fetch_expenses_for_day(day_start, day_end)
+-    else:
+-        job_orders = []
+-        expense_rows = []
++    total_sales = gross_collected
++    machine_revenue = max(0, total_sales - product_revenue - service_revenue)
+ 
+-    gcash_job_orders = [row for row in job_orders if int(row.get("paid_by_gcash") or 0) == 1]
+-    gcash_job_order_count = txn_gcash_count + len(gcash_job_orders) + post_cycle_count
+-    gcash_revenue = txn_gcash_revenue + sum(int(r.get("total_amount") or 0) for r in gcash_job_orders) + post_cycle_amount
++    gcash_revenue = txn_gcash_revenue + post_cycle_amount
++    gcash_transaction_count = txn_gcash_count + post_cycle_count
++
++    job_order_count = len(job_orders)
++    job_order_used_count = sum(1 for r in job_orders if str(r.get("status") or "").upper() == "USED")
++    job_order_open_count = sum(1 for r in job_orders if str(r.get("status") or "").upper() == "OPEN")
++    job_order_total_amount = sum(int(r.get("total_amount") or 0) for r in job_orders)
++
++    promo_orders = [r for r in job_orders if r.get("promo_id") or r.get("promo_name")]
++    job_order_promo_count = len(promo_orders)
++    promo_counts = {}
++    for r in promo_orders:
++        name = str(r.get("promo_name") or r.get("promo_id") or "Unknown Promo").strip()
++        promo_counts[name] = promo_counts.get(name, 0) + 1
++    job_order_promo_breakdown = [{"name": name, "count": count} for name, count in promo_counts.items()]
+ 
+     manual_expenses = sum(int(r.get("total") or 0) for r in expense_rows)
+     cogs_total = int(item_usage.get("cogs_total") or 0)
+     total_expenses = manual_expenses + cogs_total
++
++    analytics_settings = get_analytics_settings()
++    include_service_in_net = bool(analytics_settings.get("include_service_revenue_in_net", False))
++    _svc_adj = 0 if include_service_in_net else -txn_service_revenue
++
+     cash_sales, cash_collected = _compute_cash_sales_and_net(
+         total_sales,
+         txn_gcash_revenue,
+         post_cycle_amount,
+         total_expenses,
++        _svc_adj,
+     )
+ 
+     expense_breakdown = [
+@@ -988,15 +1165,15 @@
+         "manual_expenses": manual_expenses,
+         "cogs_total": cogs_total,
+         "total_expenses": total_expenses,
+-        "net_sales": total_sales - total_expenses,
+-        "net_after_expenses": total_sales - total_expenses,
++        "net_sales": total_sales + _svc_adj - total_expenses,
++        "net_after_expenses": total_sales + _svc_adj - total_expenses,
+         "machine_revenue": machine_revenue,
+         "cash_sales": cash_sales,
+         "cash_revenue": cash_collected,
+         "cash_collected": cash_collected,
+         "gcash_revenue": gcash_revenue,
+         "gcash_collected": gcash_revenue,
+-        "gcash_job_order_count": gcash_job_order_count,
++        "gcash_job_order_count": gcash_transaction_count,
+         "post_cycle_transfer_amount": post_cycle_amount,
+         "post_cycle_transfer_count": post_cycle_count,
+         "product_revenue": product_revenue,
+@@ -1006,6 +1183,12 @@
+         "product_breakdown": item_breakdown["product"],
+         "service_breakdown": item_breakdown["service"],
+         "expense_breakdown": expense_breakdown,
++        "job_order_count": job_order_count,
++        "job_order_used_count": job_order_used_count,
++        "job_order_open_count": job_order_open_count,
++        "job_order_total_amount": job_order_total_amount,
++        "job_order_promo_count": job_order_promo_count,
++        "job_order_promo_breakdown": job_order_promo_breakdown,
+         "active_shift": active_shift,
+     }
+ 
+@@ -1027,7 +1210,7 @@
+         SELECT id, substr(started_at, 1, 10) AS tx_day, amount, service_total, status
+         FROM transactions
+         WHERE started_at >= ? AND started_at <= ?
+-          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
++          AND status IN ('COMPLETED', 'SIMULATED')
+         """,
+         (month_start, month_end),
+     ).fetchall()
+@@ -1112,8 +1295,38 @@
+ 
+ @dashboard_bp.route("/")
+ def index():
+-    return jsonify({"service": "LaundryLink Pi", "status": "ok"})
++    machines = _enrich_machines([_normalize_machine_runtime(m) for m in get_all_machines()])
++    all_transactions = _enrich_transactions(_get_transactions(limit=None))
++    transactions = all_transactions[:2000]
++
++    stats = _build_dashboard_stats(all_transactions, machines)
++    analytics = _build_analytics(all_transactions, machines)
++
++    locations = [{
++        "id": DEFAULT_LOCATION_ID,
++        "name": "Local Pi",
++        "pi_url": f"http://127.0.0.1:{os.environ.get('PORT', '5000')}",
++    }]
+ 
++    import json
++    for m in machines:
++        try:
++            m["custom_modes_parsed"] = json.loads(m.get("custom_modes") or "[]")
++        except Exception:
++            m["custom_modes_parsed"] = []
++
++    return render_template(
++        "dashboard.html",
++        stats=stats,
++        transactions=transactions,
++        locations=locations,
++        machines=machines,
++        analytics=analytics,
++        transactions_json=json.dumps(transactions),
++        analytics_json=json.dumps(analytics),
++        machines_json=json.dumps(machines),
++        locations_json=json.dumps(locations),
++    )
+ 
+ 
+ @dashboard_bp.route("/dashboard/analytics")
+@@ -1346,6 +1559,51 @@
+     return jsonify({"status": "ok", **updated}), 200
+ 
+ 
++@dashboard_bp.route("/dashboard/settings/day-change-time", methods=["GET"])
++def get_day_change_time_setting():
++    return jsonify({"day_change_time": get_day_change_time()}), 200
++
++
++@dashboard_bp.route("/dashboard/settings/day-change-time", methods=["POST"])
++def update_day_change_time_setting():
++    guard = require_admin_pin()
++    if guard:
++        return guard
++
++    data = request.get_json(silent=True) or {}
++    new_time = data.get("day_change_time")
++    if not new_time:
++        return jsonify({"error": "Missing day_change_time"}), 400
++
++    try:
++        set_day_change_time(new_time)
++    except ValueError as exc:
++        return jsonify({"error": str(exc)}), 400
++
++    return jsonify({"status": "ok", "day_change_time": get_day_change_time()}), 200
++
++
++@dashboard_bp.route("/dashboard/settings/analytics", methods=["GET"])
++def get_analytics_settings_route():
++    guard = require_admin_pin()
++    if guard:
++        return guard
++    return jsonify(get_analytics_settings()), 200
++
++
++@dashboard_bp.route("/dashboard/settings/analytics", methods=["POST"])
++def update_analytics_settings_route():
++    guard = require_admin_pin()
++    if guard:
++        return guard
++    data = request.get_json(silent=True) or {}
++    try:
++        updated = set_analytics_settings(data)
++    except ValueError as exc:
++        return jsonify({"error": str(exc)}), 400
++    return jsonify({"status": "ok", **updated}), 200
++
++
+ @dashboard_bp.route("/dashboard/summary/calendar")
+ def get_calendar_summary():
+     now = datetime.now()
+@@ -1408,7 +1666,6 @@
+     active_shift = get_active_shift(location_id)
+     if not active_shift:
+         return jsonify({"error": "No active employee shift. Please time in first."}), 400
+-
+     try:
+         customer = _resolve_customer_payload(data)
+     except ValueError as exc:
+@@ -1423,6 +1680,11 @@
+     paid_by_gcash = False
+     wash_mode = "normal"
+     dry_mode = "normal"
++    promo_id = None
++    promo_name = None
++    print_receipt = 1
++    items = []
++
+     if not machine_orders_payload:
+         try:
+             wash_qty = int(data.get("wash_qty", 0))
+@@ -1437,6 +1699,10 @@
+         paid_by_gcash = bool(data.get("paid_by_gcash"))
+         wash_mode = _normalize_job_order_mode(data.get("wash_mode"))
+         dry_mode = _normalize_job_order_mode(data.get("dry_mode"))
++        promo_id = str(data.get("promo_id") or "").strip() or None
++        promo_name = str(data.get("promo_name") or "").strip() or None
++        print_receipt = 1 if data.get("print_receipt", True) else 0
++        items = data.get("items") or []
+ 
+         if wash_qty < 0 or dry_qty < 0 or product_qty < 0 or service_qty < 0 or product_amount < 0 or service_amount < 0:
+             return jsonify({"error": "wash_qty, dry_qty, product_qty, service_qty, product_amount, and service_amount cannot be negative"}), 400
+@@ -1472,32 +1738,18 @@
+                 paid_by_gcash = paid_by_gcash or bool((entry or {}).get("paid_by_gcash"))
+                 entry_wash_mode = _normalize_job_order_mode((entry or {}).get("wash_mode"))
+                 entry_dry_mode = _normalize_job_order_mode((entry or {}).get("dry_mode"))
++                entry_promo_id = str((entry or {}).get("promo_id") or "").strip() or None
++                entry_promo_name = str((entry or {}).get("promo_name") or "").strip() or None
++                entry_print = 1 if (entry or {}).get("print_receipt", True) else 0
++                entry_items = (entry or {}).get("items") or []
+ 
+                 if entry_wash_qty < 0 or entry_dry_qty < 0 or entry_product_qty < 0 or entry_service_qty < 0 or entry_product_amount < 0 or entry_service_amount < 0:
+                     return jsonify({"error": "machine_orders wash_qty, dry_qty, product_qty, service_qty, product_amount, and service_amount cannot be negative"}), 400
+                 if entry_wash_qty == 0 and entry_dry_qty == 0:
+                     return jsonify({"error": "machine_orders entries must include wash_qty or dry_qty"}), 400
+ 
+-                wash_unit_price = _vend_price_by_machine_type("washer")
+-                dry_unit_price = _vend_price_by_machine_type("dryer")
+-                if machine_type == "washer":
+-                    selected_wash_mode = entry_wash_mode if entry_wash_qty > 0 else "normal"
+-                    if selected_wash_mode == "quick":
+-                        wash_unit_price = max(
+-                            0,
+-                            int((machine or {}).get("quick_wash_price") or (machine or {}).get("vend_price") or _quick_price_by_machine_type("washer") or 0),
+-                        )
+-                    else:
+-                        wash_unit_price = max(0, int((machine or {}).get("vend_price") or wash_unit_price or 0))
+-                elif machine_type == "dryer":
+-                    selected_dry_mode = entry_dry_mode if entry_dry_qty > 0 else "normal"
+-                    if selected_dry_mode == "quick":
+-                        dry_unit_price = max(
+-                            0,
+-                            int((machine or {}).get("quick_wash_price") or (machine or {}).get("vend_price") or _quick_price_by_machine_type("dryer") or 0),
+-                        )
+-                    else:
+-                        dry_unit_price = max(0, int((machine or {}).get("vend_price") or dry_unit_price or 0))
++                wash_unit_price = _price_by_machine_type("washer", entry_wash_mode, machine) if entry_wash_qty > 0 else _price_by_machine_type("washer", "standard")
++                dry_unit_price = _price_by_machine_type("dryer", entry_dry_mode, machine) if entry_dry_qty > 0 else _price_by_machine_type("dryer", "standard")
+ 
+                 normalized_orders.append({
+                     "machine_id": machine_id or ("any-washer" if machine_type == "washer" else "any-dryer"),
+@@ -1514,6 +1766,10 @@
+                     "paid_by_gcash": paid_by_gcash or bool((entry or {}).get("paid_by_gcash")),
+                     "wash_unit_price": wash_unit_price,
+                     "dry_unit_price": dry_unit_price,
++                    "promo_id": entry_promo_id,
++                    "promo_name": entry_promo_name,
++                    "print_receipt": entry_print,
++                    "items": entry_items,
+                 })
+ 
+             created_orders = create_job_orders_bulk(
+@@ -1540,23 +1796,8 @@
+         elif machine_id:
+             return jsonify({"error": "Machine not found"}), 404
+ 
+-        wash_unit_price = _vend_price_by_machine_type("washer")
+-        dry_unit_price = _vend_price_by_machine_type("dryer")
+-        if machine_type == "washer" and machine:
+-            if wash_mode == "quick":
+-                wash_unit_price = max(0, int(machine.get("quick_wash_price") or machine.get("vend_price") or _quick_price_by_machine_type("washer") or 0))
+-            else:
+-                wash_unit_price = max(0, int(machine.get("vend_price") or wash_unit_price or 0))
+-        elif machine_type == "dryer" and machine:
+-            if dry_mode == "quick":
+-                dry_unit_price = max(0, int(machine.get("quick_wash_price") or machine.get("vend_price") or _quick_price_by_machine_type("dryer") or 0))
+-            else:
+-                dry_unit_price = max(0, int(machine.get("vend_price") or dry_unit_price or 0))
+-        elif machine_type == "mixed":
+-            if wash_mode == "quick":
+-                wash_unit_price = _quick_price_by_machine_type("washer")
+-            if dry_mode == "quick":
+-                dry_unit_price = _quick_price_by_machine_type("dryer")
++        wash_unit_price = _price_by_machine_type("washer", wash_mode, machine) if wash_qty > 0 else _price_by_machine_type("washer", "standard")
++        dry_unit_price = _price_by_machine_type("dryer", dry_mode, machine) if dry_qty > 0 else _price_by_machine_type("dryer", "standard")
+ 
+         order = create_job_order(
+             customer_id=customer["customer_id"],
+@@ -1579,10 +1820,17 @@
+             created_by_shift_id=active_shift.get("id"),
+             created_by_employee_id=active_shift.get("employee_id"),
+             created_by_employee_name=active_shift.get("display_name"),
++            promo_id=promo_id,
++            promo_name=promo_name,
++            print_receipt=print_receipt,
++            items=items,
+         )
+         return jsonify({"status": "ok", "job_order": order}), 201
+-    except Exception as exc:
+-        return jsonify({"error": f"Failed to create job order: {exc}"}), 500
++
++    except ValueError as e:
++        return jsonify({"error": str(e)}), 400
++    except Exception as e:
++        return jsonify({"error": "Failed to create job order"}), 500
+ 
+ 
+ @dashboard_bp.route("/dashboard/job-orders/<job_order_id>", methods=["DELETE"])
+@@ -1736,26 +1984,63 @@
+     }
+     transaction_id = None
+     is_job_order_completed = str(claimed_job_order.get("status") or "").upper() == "USED"
++    target_amount = base_amount
++    fetch_jo_items = False
++
++    finalize_request_id = request_id or f"jo-act-{claimed_job_order.get('id')}:{txn_id}"
++    txn_result = insert_transaction_with_items(
++        txn_id,
++        machine_id,
++        target_amount,
++        txn_status,
++        timestamp,
++        employee_id=active_shift["employee_id"],
++        shift_id=active_shift["id"],
++        sale_items=[],
++        request_id=finalize_request_id,
++        customer_id=customer["customer_id"],
++        customer_name=customer["name"],
++        customer_phone=customer.get("phone"),
++        paid_by_gcash=bool(claimed_job_order.get("paid_by_gcash")),
++        job_order_id=claimed_job_order.get("id"),
++        job_order_no=claimed_job_order.get("job_order_no"),
++        fetch_jo_items=fetch_jo_items,
++    )
++    transaction_id = txn_result.get("transaction_id", txn_id)
++
+     if is_job_order_completed:
+-        finalize_request_id = request_id or f"jo-finalize:{claimed_job_order.get('id')}"
+-        txn_result = insert_transaction_with_items(
+-            txn_id,
+-            machine_id,
+-            int(claimed_job_order.get("total_amount") or 0),
+-            txn_status,
+-            timestamp,
+-            employee_id=active_shift["employee_id"],
+-            shift_id=active_shift["id"],
+-            sale_items=[],
+-            request_id=finalize_request_id,
+-            customer_id=customer["customer_id"],
+-            customer_name=customer["name"],
+-            customer_phone=customer.get("phone"),
+-            paid_by_gcash=bool(claimed_job_order.get("paid_by_gcash")),
+-            job_order_id=claimed_job_order.get("id"),
+-            job_order_no=claimed_job_order.get("job_order_no"),
+-        )
+-        transaction_id = txn_result.get("transaction_id", txn_id)
++        conn = get_connection()
++        row_sum = conn.execute(
++            "SELECT SUM(amount) AS total FROM transactions WHERE job_order_id = ? AND status IN ('COMPLETED', 'SIMULATED')",
++            (claimed_job_order.get("id"),)
++        ).fetchone()
++        already_paid = int(row_sum["total"] or 0) if row_sum else 0
++        conn.close()
++
++        addon_amount = int(claimed_job_order.get("total_amount") or 0) - already_paid
++        has_items = bool(int(claimed_job_order.get("product_qty") or 0) > 0 or int(claimed_job_order.get("service_qty") or 0) > 0)
++
++        if addon_amount != 0 or has_items:
++            addon_txn_id = str(uuid.uuid4())
++            addon_request_id = f"jo-addons-{claimed_job_order.get('id')}:{addon_txn_id[:8]}"
++            insert_transaction_with_items(
++                addon_txn_id,
++                "post-cycle-addons",
++                addon_amount,
++                txn_status,
++                timestamp,
++                employee_id=active_shift["employee_id"],
++                shift_id=active_shift["id"],
++                sale_items=[],
++                request_id=addon_request_id,
++                customer_id=customer["customer_id"],
++                customer_name=customer["name"],
++                customer_phone=customer.get("phone"),
++                paid_by_gcash=bool(claimed_job_order.get("paid_by_gcash")),
++                job_order_id=claimed_job_order.get("id"),
++                job_order_no=claimed_job_order.get("job_order_no"),
++                fetch_jo_items=True,
++            )
+         attach_job_order_transaction(claimed_job_order.get("id"), transaction_id)
+ 
+     updated_customer = increment_customer_order_count(customer["customer_id"], machine.get("type"), quantity=1) or customer
+@@ -2139,7 +2424,6 @@
+     timestamp = _now_str()
+     pulse_count = max(1, int(machine.get("quick_wash_pulse_count") or 1))
+     quick_wash_price = max(0, int(machine.get("quick_wash_price") or machine.get("vend_price") or 0))
+-
+     import uuid
+ 
+     txn_id = str(uuid.uuid4())
+@@ -2171,25 +2455,64 @@
+     transaction_id = None
+     is_job_order_completed = str(claimed_job_order.get("status") or "").upper() == "USED"
+     if is_job_order_completed:
+-        finalize_request_id = request_id or f"jo-finalize:{claimed_job_order.get('id')}"
+-        txn_result = insert_transaction_with_items(
+-            txn_id,
+-            machine_id,
+-            int(claimed_job_order.get("total_amount") or 0),
+-            txn_status,
+-            timestamp,
+-            employee_id=active_shift["employee_id"],
+-            shift_id=active_shift["id"],
+-            sale_items=[],
+-            request_id=finalize_request_id,
+-            customer_id=customer["customer_id"],
+-            customer_name=customer["name"],
+-            customer_phone=customer.get("phone"),
+-            job_order_id=claimed_job_order.get("id"),
+-            job_order_no=claimed_job_order.get("job_order_no"),
+-            paid_by_gcash=bool(int(claimed_job_order.get("paid_by_gcash") or 0)),
+-        )
+-        transaction_id = txn_result.get("transaction_id", txn_id)
++        conn = get_connection()
++    target_amount = quick_wash_price
++    fetch_jo_items = False
++
++    finalize_request_id = request_id or f"jo-act-{claimed_job_order.get('id')}:{txn_id}"
++    txn_result = insert_transaction_with_items(
++        txn_id,
++        machine_id,
++        target_amount,
++        txn_status,
++        timestamp,
++        employee_id=active_shift["employee_id"],
++        shift_id=active_shift["id"],
++        sale_items=[],
++        request_id=finalize_request_id,
++        customer_id=customer["customer_id"],
++        customer_name=customer["name"],
++        customer_phone=customer.get("phone"),
++        job_order_id=claimed_job_order.get("id"),
++        job_order_no=claimed_job_order.get("job_order_no"),
++        paid_by_gcash=bool(int(claimed_job_order.get("paid_by_gcash") or 0)),
++        fetch_jo_items=fetch_jo_items,
++    )
++    transaction_id = txn_result.get("transaction_id", txn_id)
++
++    if is_job_order_completed:
++        conn = get_connection()
++        row_sum = conn.execute(
++            "SELECT SUM(amount) AS total FROM transactions WHERE job_order_id = ? AND status IN ('COMPLETED', 'SIMULATED')",
++            (claimed_job_order.get("id"),)
++        ).fetchone()
++        already_paid = int(row_sum["total"] or 0) if row_sum else 0
++        conn.close()
++
++        addon_amount = int(claimed_job_order.get("total_amount") or 0) - already_paid
++        has_items = bool(int(claimed_job_order.get("product_qty") or 0) > 0 or int(claimed_job_order.get("service_qty") or 0) > 0)
++
++        if addon_amount != 0 or has_items:
++            addon_txn_id = str(uuid.uuid4())
++            addon_request_id = f"jo-addons-{claimed_job_order.get('id')}:{addon_txn_id[:8]}"
++            insert_transaction_with_items(
++                addon_txn_id,
++                "post-cycle-addons",
++                addon_amount,
++                txn_status,
++                timestamp,
++                employee_id=active_shift["employee_id"],
++                shift_id=active_shift["id"],
++                sale_items=[],
++                request_id=addon_request_id,
++                customer_id=customer["customer_id"],
++                customer_name=customer["name"],
++                customer_phone=customer.get("phone"),
++                job_order_id=claimed_job_order.get("id"),
++                job_order_no=claimed_job_order.get("job_order_no"),
++                paid_by_gcash=bool(int(claimed_job_order.get("paid_by_gcash") or 0)),
++                fetch_jo_items=True,
++            )
+         attach_job_order_transaction(claimed_job_order.get("id"), transaction_id)
+ 
+     updated_customer = increment_customer_order_count(customer["customer_id"], machine.get("type"), quantity=1) or customer
+@@ -2314,6 +2637,7 @@
+             machine_id=machine_id,
+             name=(str(data.get("name") or "").strip() if "name" in data else None),
+             esp32_ip=(str(data.get("esp32_ip") or "").strip() if "esp32_ip" in data else None),
++            machine_type=(str(data.get("type") or "").strip() if "type" in data else None),
+             machine_function=(str(data.get("machine_function") or "").strip() if "machine_function" in data else None),
+             pulse_on=(int(data["pulse_on"]) if "pulse_on" in data else None),
+             pulse_off=(int(data["pulse_off"]) if "pulse_off" in data else None),
+@@ -2321,6 +2645,8 @@
+             vend_price=(int(data["vend_price"]) if "vend_price" in data else None),
+             quick_wash_pulse_count=(int(data["quick_wash_pulse_count"]) if "quick_wash_pulse_count" in data else None),
+             quick_wash_price=(int(data["quick_wash_price"]) if "quick_wash_price" in data else None),
++            custom_modes=(data.get("custom_modes") if "custom_modes" in data else None),
++            order_index=(int(data["order_index"]) if "order_index" in data else None),
+         )
+     except (TypeError, ValueError):
+         return jsonify({"error": "Invalid numeric settings."}), 400
+@@ -2331,6 +2657,22 @@
+     return jsonify({"status": "ok"}), 200
+ 
+ 
++@dashboard_bp.route("/dashboard/machines/delete", methods=["POST"])
++def delete_machines_route():
++    guard = require_admin_pin()
++    if guard:
++        return guard
++
++    data = request.get_json() or {}
++    machine_ids = data.get("machine_ids", [])
++    
++    if not machine_ids or not isinstance(machine_ids, list):
++        return jsonify({"error": "Missing or invalid machine_ids array"}), 400
++
++    deleted = delete_machines(machine_ids)
++    return jsonify({"status": "ok", "deleted": deleted}), 200
++
++
+ @dashboard_bp.route("/dashboard/machines/live-status")
+ def live_machine_status():
+     machines = get_all_machines()
+@@ -2397,6 +2739,14 @@
+     )
+ 
+ 
++@dashboard_bp.route("/dashboard/api/transactions", methods=["GET"])
++def get_transactions_api():
++    limit = request.args.get("limit", default=2000, type=int)
++    offset = request.args.get("offset", default=0, type=int)
++    transactions = _enrich_transactions(_get_transactions(limit=limit, offset=offset))
++    return jsonify(transactions)
++
++
+ @dashboard_bp.route("/dashboard/transactions/find-by-amount", methods=["GET"])
+ def dashboard_find_transaction_by_amount():
+     amount_arg = request.args.get("amount")
+@@ -2580,3 +2930,63 @@
+         download_name=filename,
+         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+     )
++
++
++# ---------------------------------------------------------------------------
++# Email Settings Routes
++# ---------------------------------------------------------------------------
++
++@dashboard_bp.route("/dashboard/settings/email", methods=["GET"])
++def get_email_settings_route():
++    guard = require_admin_pin()
++    if guard:
++        return guard
++
++    settings = get_email_settings()
++    return jsonify(settings)
++
++
++@dashboard_bp.route("/dashboard/settings/email", methods=["POST"])
++def update_email_settings_route():
++    guard = require_admin_pin()
++    if guard:
++        return guard
++
++    data = request.get_json(silent=True) or {}
++
++
++
++    try:
++        updated = set_email_settings(data)
++    except ValueError as exc:
++        return jsonify({"error": str(exc)}), 400
++
++    # Reschedule the APScheduler job to match the new settings
++    try:
++        from services.emailing import refresh_email_schedule
++        refresh_email_schedule()
++    except Exception:
++        pass  # Scheduler not running in test environments
++
++    return jsonify({"status": "ok", **updated}), 200
++
++
++@dashboard_bp.route("/dashboard/settings/email/test", methods=["POST"])
++def trigger_test_email_route():
++    guard = require_admin_pin()
++    if guard:
++        return guard
++
++    settings = get_email_settings()
++    if not settings.get("smtp_email") or not settings.get("smtp_password"):
++        return jsonify({"error": "SMTP credentials are not configured."}), 400
++    if not settings.get("recipients"):
++        return jsonify({"error": "No recipients configured."}), 400
++
++    try:
++        from services.emailing import trigger_test_email
++        trigger_test_email()
++    except Exception as exc:
++        return jsonify({"error": f"Failed to trigger test email: {exc}"}), 500
++
++    return jsonify({"status": "ok", "message": "Test email is being sent in the background."}), 200
+diff -ur /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/inventory.py /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/inventory.py
+--- /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/inventory.py	2026-06-21 21:37:41.876962647 +0800
++++ /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/inventory.py	2026-06-21 22:03:24.145968980 +0800
+@@ -16,6 +16,10 @@
+     list_services,
+     update_product,
+     update_service,
++    list_promos,
++    create_promo,
++    update_promo,
++    delete_promo,
+ )
+ from routes.security import require_admin_pin
+ 
+@@ -237,3 +241,53 @@
+ @inventory_bp.route("/inventory/low-stock", methods=["GET"])
+ def low_stock():
+     return jsonify({"items": list_low_stock_products()})
++
++
++@inventory_bp.route("/catalog/promos", methods=["GET"])
++
++def get_promos():
++    return jsonify({"promos": list_promos(active_only=False)})
++
++@inventory_bp.route("/catalog/promos", methods=["POST"])
++def add_promo():
++    data = request.get_json() or {}
++    name = str(data.get("name") or "").strip()
++    price = int(data.get("price") or 0)
++    wash_qty = int(data.get("wash_qty") or 0)
++    dry_qty = int(data.get("dry_qty") or 0)
++    items = data.get("items") or None  # list of {item_type, item_id, item_name, quantity}
++    # Fallback generic counts if no items provided
++    product_qty = int(data.get("product_qty") or 0)
++    service_qty = int(data.get("service_qty") or 0)
++    if not name:
++        return jsonify({"error": "Promo name is required"}), 400
++    try:
++        new_id = create_promo(name, price, wash_qty, dry_qty, product_qty, service_qty, items=items)
++        return jsonify({"status": "ok", "promo_id": new_id}), 201
++    except IntegrityError:
++        return jsonify({"error": "Promo with this name already exists"}), 400
++
++@inventory_bp.route("/catalog/promos/<promo_id>", methods=["PUT"])
++def edit_promo(promo_id):
++    data = request.get_json() or {}
++    items = data.get("items")  # None means don't touch items; [] means clear them
++    success = update_promo(
++        promo_id=promo_id,
++        name=data.get("name"),
++        price=data.get("price"),
++        wash_qty=data.get("wash_qty"),
++        dry_qty=data.get("dry_qty"),
++        product_qty=data.get("product_qty"),
++        service_qty=data.get("service_qty"),
++        is_active=data.get("is_active"),
++        items=items,
++    )
++    if not success:
++        return jsonify({"error": "Promo not found"}), 404
++    return jsonify({"status": "ok"})
++
++@inventory_bp.route("/catalog/promos/<promo_id>", methods=["DELETE"])
++
++def remove_promo(promo_id):
++    success = delete_promo(promo_id)
++    return jsonify({"status": "ok" if success else "error"}), 200
+diff -ur /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/machines.py /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/machines.py
+--- /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/machines.py	2026-06-21 21:37:41.876962647 +0800
++++ /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/machines.py	2026-06-21 22:03:24.145968980 +0800
+@@ -25,6 +25,7 @@
+     update_machine_status,
+     delete_transactions,
+     revert_job_order_usage,
++    get_connection,
+ )
+ from routes.security import require_admin_pin
+ from services.esp32 import send_pulse, get_esp32_status, async_send_pulse
+@@ -121,17 +122,8 @@
+ @machines_bp.route("/machines", methods=["GET"])
+ def list_machines():
+     machines = get_all_machines()
+-    
+-    # Check machine statuses in parallel to prevent long load times
+-    # when multiple offline machines are timing out.
+-    import concurrent.futures
+-    def fetch_status(m):
++    for m in machines:
+         m["status"] = get_esp32_status(m["esp32_ip"])
+-        return m
+-        
+-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+-        machines = list(executor.map(fetch_status, machines))
+-        
+     return jsonify(machines)
+ 
+ 
+@@ -300,6 +292,8 @@
+     except (TypeError, ValueError):
+         return jsonify({"error": "Bulk settings must be valid whole numbers"}), 400
+ 
++    custom_modes = data.get("custom_modes")
++
+     if vend_price is not None and vend_price < 0:
+         return jsonify({"error": "vend_price must be 0 or higher"}), 400
+     if pulse_count is not None and pulse_count < 1:
+@@ -314,15 +308,18 @@
+         and pulse_count is None
+         and quick_wash_price is None
+         and quick_wash_pulse_count is None
++        and custom_modes is None
+     ):
+         return jsonify({"error": "Provide at least one setting to update"}), 400
+ 
++    import json
+     updated_count = update_machine_settings_bulk(
+         machine_ids=normalized_ids,
+         vend_price=vend_price,
+         pulse_count=pulse_count,
+         quick_wash_price=quick_wash_price,
+         quick_wash_pulse_count=quick_wash_pulse_count,
++        custom_modes=json.dumps(custom_modes) if custom_modes is not None else None,
+     )
+ 
+     return jsonify(
+@@ -392,7 +389,6 @@
+         return jsonify({"error": "Valid job_order_id is required before machine activation"}), 400
+ 
+     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+-    pulse_count = int(machine["pulse_count"])
+ 
+     import uuid
+ 
+@@ -416,37 +412,77 @@
+         "phone": claimed_job_order.get("customer_phone"),
+     }
+ 
+-    txn_result = {
+-        "total_amount": 0,
+-        "product_total": 0,
+-        "service_total": 0,
+-        "item_count": 0,
+-        "low_stock_warnings": [],
+-        "idempotent_hit": False,
+-    }
+-    transaction_id = None
+-    is_job_order_completed = str(claimed_job_order.get("status") or "").upper() == "USED"
++    current_machine_type = str(machine.get("type") or "").strip().lower()
++    wash_mode = str(claimed_job_order.get("wash_mode") or "standard").strip().lower()
++    dry_mode = str(claimed_job_order.get("dry_mode") or "standard").strip().lower()
++    selected_mode = wash_mode if current_machine_type == "washer" else dry_mode
++
++    if selected_mode == "quick":
++        pulse_count = max(1, int(machine.get("quick_wash_pulse_count") or 1))
++        base_amount = max(0, int(machine.get("quick_wash_price") or machine.get("vend_price") or 0))
++    else:
++        pulse_count = int(machine.get("pulse_count") or 2)
++        base_amount = max(0, int(machine.get("vend_price") or 0))
++
++    target_amount = base_amount
++    fetch_jo_items = False
++
++    finalize_request_id = request_id or f"jo-act-{claimed_job_order.get('id')}:{txn_id}"
++    txn_result = insert_transaction_with_items(
++        txn_id,
++        machine_id,
++        target_amount,
++        txn_status,
++        timestamp,
++        employee_id=active_shift["employee_id"],
++        shift_id=active_shift["id"],
++        sale_items=[],
++        request_id=finalize_request_id,
++        customer_id=customer.get("customer_id"),
++        customer_name=customer.get("name"),
++        customer_phone=customer.get("phone"),
++        job_order_id=claimed_job_order.get("id"),
++        job_order_no=claimed_job_order.get("job_order_no"),
++        paid_by_gcash=bool(int(claimed_job_order.get("paid_by_gcash") or 0)),
++        fetch_jo_items=fetch_jo_items,
++    )
++    transaction_id = txn_result.get("transaction_id", txn_id)
++
+     if is_job_order_completed:
+-        finalize_request_id = request_id or f"jo-finalize:{claimed_job_order.get('id')}"
+-        txn_result = insert_transaction_with_items(
+-            txn_id,
+-            machine_id,
+-            int(claimed_job_order.get("total_amount") or 0),
+-            txn_status,
+-            timestamp,
+-            employee_id=active_shift["employee_id"],
+-            shift_id=active_shift["id"],
+-            sale_items=[],
+-            request_id=finalize_request_id,
+-            customer_id=customer.get("customer_id"),
+-            customer_name=customer.get("name"),
+-            customer_phone=customer.get("phone"),
+-            job_order_id=claimed_job_order.get("id"),
+-            job_order_no=claimed_job_order.get("job_order_no"),
+-            paid_by_gcash=bool(int(claimed_job_order.get("paid_by_gcash") or 0)),
+-        )
+-        transaction_id = txn_result.get("transaction_id", txn_id)
++        conn = get_connection()
++        row_sum = conn.execute(
++            "SELECT SUM(amount) AS total FROM transactions WHERE job_order_id = ? AND status IN ('COMPLETED', 'SIMULATED')",
++            (claimed_job_order.get("id"),)
++        ).fetchone()
++        already_paid = int(row_sum["total"] or 0) if row_sum else 0
++        conn.close()
++
++        addon_amount = int(claimed_job_order.get("total_amount") or 0) - already_paid
++        has_items = bool(int(claimed_job_order.get("product_qty") or 0) > 0 or int(claimed_job_order.get("service_qty") or 0) > 0)
++
++        if addon_amount != 0 or has_items:
++            addon_txn_id = str(uuid.uuid4())
++            addon_request_id = f"jo-addons-{claimed_job_order.get('id')}:{addon_txn_id[:8]}"
++            insert_transaction_with_items(
++                addon_txn_id,
++                "post-cycle-addons",
++                addon_amount,
++                txn_status,
++                timestamp,
++                employee_id=active_shift["employee_id"],
++                shift_id=active_shift["id"],
++                sale_items=[],
++                request_id=addon_request_id,
++                customer_id=customer.get("customer_id") or customer.get("id"),
++                customer_name=customer.get("name"),
++                customer_phone=customer.get("phone"),
++                job_order_id=claimed_job_order.get("id"),
++                job_order_no=claimed_job_order.get("job_order_no"),
++                paid_by_gcash=bool(int(claimed_job_order.get("paid_by_gcash") or 0)),
++                fetch_jo_items=True,
++            )
+         attach_job_order_transaction(claimed_job_order.get("id"), transaction_id)
++
+     updated_customer = increment_customer_order_count(customer["customer_id"], machine.get("type"), quantity=1) or customer
+     run_ends_at = (datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=MACHINE_RUN_SECONDS)).strftime("%Y-%m-%d %H:%M:%S")
+     set_machine_run_window(machine_id, timestamp, run_ends_at)
+@@ -477,7 +513,7 @@
+         "stored_transaction_id": transaction_id,
+         "machine": machine["name"],
+         "amount": txn_result["total_amount"],
+-        "base_amount": machine["vend_price"],
++        "base_amount": base_amount,
+         "product_total": txn_result["product_total"],
+         "service_total": txn_result["service_total"],
+         "item_count": txn_result["item_count"],
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/dashboard.cpython-312.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/dashboard.cpython-312.pyc differ
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/dashboard.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/dashboard.cpython-314.pyc differ
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/__init__.cpython-312.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/__init__.cpython-312.pyc differ
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/__init__.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/__init__.cpython-314.pyc differ
+Only in /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__: inventory.cpython-312.pyc
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/inventory.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/inventory.cpython-314.pyc differ
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/machines.cpython-312.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/machines.cpython-312.pyc differ
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/machines.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/machines.cpython-314.pyc differ
+Only in /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__: reports.cpython-312.pyc
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/reports.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/reports.cpython-314.pyc differ
+Only in /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__: security.cpython-312.pyc
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/security.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/security.cpython-314.pyc differ
+Only in /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__: shifts.cpython-312.pyc
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/shifts.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/shifts.cpython-314.pyc differ
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/transactions.cpython-312.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/transactions.cpython-312.pyc differ
+Binary files /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/__pycache__/transactions.cpython-314.pyc and /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/__pycache__/transactions.cpython-314.pyc differ
+diff -ur /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/reports.py /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/reports.py
+--- /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/reports.py	2026-06-21 21:37:41.876962647 +0800
++++ /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/reports.py	2026-06-21 22:03:24.145968980 +0800
+@@ -18,6 +18,8 @@
+     summarize_post_cycle_payment_logs,
+     update_manual_expense,
+     get_receipt_overrides,
++    get_day_change_time,
++    get_analytics_settings,
+ )
+ from routes.security import require_admin_pin
+ 
+@@ -28,9 +30,20 @@
+ 
+ 
+ def _operational_day_window(day_str):
++    change_time = get_day_change_time()
++    try:
++        parts = change_time.split(":")
++        hh = int(parts[0])
++        mm = int(parts[1])
++    except Exception:
++        hh = 8
++        mm = 1
++
++    dt_start = datetime.strptime(day_str, "%Y-%m-%d") + timedelta(hours=hh, minutes=mm)
++    dt_end = dt_start + timedelta(days=1) - timedelta(seconds=1)
+     return (
+-        f"{day_str} 00:00:00",
+-        f"{day_str} 23:59:59",
++        dt_start.strftime("%Y-%m-%d %H:%M:%S"),
++        dt_end.strftime("%Y-%m-%d %H:%M:%S")
+     )
+ 
+ 
+@@ -123,10 +136,12 @@
+     expense_lines = report.get("expense_breakdown") or []
+     machine_usage_lines = report.get("machine_usage_breakdown") or []
+ 
+-    lines = [
++    top_spacing = int(config.get("top_spacing_lines", 3))
++    lines = [""] * top_spacing
++    lines.extend([
+         _receipt_shop_name(config),
+         divider,
+-    ]
++    ])
+ 
+     if receipt_group == "recent_shifts_summary":
+         default_order = [
+@@ -141,6 +156,7 @@
+             "recent_shifts_summary.cash_revenue_section",
+             "recent_shifts_summary.gcash_revenue_section",
+             "recent_shifts_summary.expenses_section",
++            "recent_shifts_summary.job_orders_section",
+             "recent_shifts_summary.net_sales_section",
+         ]
+     else:
+@@ -156,6 +172,7 @@
+             "shiftday.cash_revenue_section",
+             "shiftday.gcash_revenue_section",
+             "shiftday.expenses_section",
++            "shiftday.job_orders_section",
+             "shiftday.net_sales_section",
+         ]
+ 
+@@ -243,6 +260,24 @@
+                     lines.append(_line(f"- {row['name']} x{row['count']}", _peso(row["total"]), width))
+             else:
+                 lines.append(_line("- None", _peso(0), width))
++        elif section_key == f"{receipt_group}.job_orders_section":
++            promo_count = int(report.get("job_order_promo_count") or 0)
++            promo_lines = []
++            for item in report.get("job_order_promo_breakdown") or []:
++                promo_lines.append(_line(f"  - {item['name']}", item["count"], width))
++            
++            lines.extend([
++                divider,
++                "JOB ORDERS SUMMARY",
++                _line("Total Orders", int(report.get("job_order_count") or 0), width),
++                _line("- Used", int(report.get("job_order_used_count") or 0), width),
++                _line("- Open", int(report.get("job_order_open_count") or 0), width),
++                _line("Total Revenue", _peso(report.get("job_order_total_amount") or 0), width),
++                _line("Promo Orders", promo_count, width),
++            ])
++            if promo_lines:
++                lines.append("PROMO BREAKDOWN:")
++                lines.extend(promo_lines)
+         elif section_key == f"{receipt_group}.net_sales_section":
+             lines.extend([
+                 divider,
+@@ -253,11 +288,8 @@
+     lines.append(divider)
+     if _receipt_enabled(config, "common.generated_footer"):
+         lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+-    lines.extend(["", ""])
+-    return "\n".join(lines)
+-    if _receipt_enabled(config, "common.generated_footer"):
+-        lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+-    lines.extend(["", ""])
++    bottom_spacing = int(config.get("bottom_spacing_lines", 6))
++    lines.extend([""] * bottom_spacing)
+     return "\n".join(lines)
+ 
+ 
+@@ -445,14 +477,19 @@
+     return breakdown
+ 
+ 
+-def _compute_cash_sales_and_net(total_sales, txn_gcash_revenue, post_cycle_transfer_amount, total_expenses):
+-    cash_sales = int(total_sales or 0) - int(txn_gcash_revenue or 0) - int(post_cycle_transfer_amount or 0)
++def _compute_cash_sales_and_net(total_sales, txn_gcash_revenue, post_cycle_transfer_amount, total_expenses, service_adjustment=0):
++    effective_sales = int(total_sales or 0) + int(service_adjustment or 0)
++    cash_sales = effective_sales - int(txn_gcash_revenue or 0) - int(post_cycle_transfer_amount or 0)
+     net_cash = cash_sales - int(total_expenses or 0)
+     return cash_sales, net_cash
+ 
+ 
+ def _build_machine_usage_breakdown(txns):
+-    machine_ids = sorted({str(txn.get("machine_id") or "").strip() for txn in (txns or []) if str(txn.get("machine_id") or "").strip()})
++    machine_ids = sorted({
++        str(txn.get("machine_id") or "").strip()
++        for txn in (txns or [])
++        if str(txn.get("machine_id") or "").strip() and str(txn.get("machine_id") or "").strip() != "post-cycle-addons"
++    })
+     if not machine_ids:
+         return []
+ 
+@@ -480,7 +517,7 @@
+     summary = {}
+     for txn in txns or []:
+         machine_id = str(txn.get("machine_id") or "").strip()
+-        if not machine_id:
++        if not machine_id or machine_id == "post-cycle-addons":
+             continue
+ 
+         machine_type = machine_meta.get(machine_id) or "unknown"
+@@ -590,7 +627,7 @@
+         SELECT id, machine_id, amount, status, started_at, product_total, service_total,
+                paid_by_gcash, gcash_amount
+         FROM transactions
+-        WHERE shift_id = ? AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
++        WHERE shift_id = ? AND status IN ('COMPLETED', 'SIMULATED')
+         ORDER BY started_at ASC
+         """,
+         (shift_id,),
+@@ -620,15 +657,25 @@
+ 
+     job_order_rows = conn.execute(
+         """
+-        SELECT id, job_order_no, machine_name, status, total_amount, paid_by_gcash
++        SELECT id, job_order_no, machine_name, status, total_amount, paid_by_gcash, promo_id, promo_name
+         FROM job_orders
+-        WHERE created_by_shift_id = ?
+-           OR (
+-                created_by_shift_id IS NULL
+-                AND created_by_employee_id = ?
+-                AND created_at >= ?
+-                AND created_at <= ?
+-           )
++        WHERE (
++                created_by_shift_id = ?
++                OR (
++                     created_by_shift_id IS NULL
++                     AND created_by_employee_id = ?
++                     AND created_at >= ?
++                     AND created_at <= ?
++                )
++              )
++          AND (
++                status = 'OPEN'
++                OR id IN (
++                    SELECT job_order_id FROM transactions
++                    WHERE job_order_id IS NOT NULL
++                      AND status IN ('COMPLETED', 'SIMULATED')
++                )
++          )
+         ORDER BY created_at ASC
+         """,
+         (
+@@ -650,7 +697,7 @@
+     product_revenue = sum(int(t.get("product_total") or 0) for t in txns)
+     service_tips = sum(int(t.get("service_total") or 0) for t in txns)
+     machine_revenue = gross_collected - product_revenue - service_tips
+-    total_sales = machine_revenue + product_revenue
++    total_sales = gross_collected
+ 
+     manual_expenses = sum(int(r["total"] or 0) for r in expense_rows)
+     total_expenses = manual_expenses + item_usage["cogs_total"]
+@@ -660,6 +707,14 @@
+     job_order_used_count = sum(1 for r in job_orders if str(r.get("status") or "").upper() == "USED")
+     job_order_open_count = sum(1 for r in job_orders if str(r.get("status") or "").upper() == "OPEN")
+     job_order_total_amount = sum(int(r.get("total_amount") or 0) for r in job_orders)
++
++    promo_orders = [r for r in job_orders if r.get("promo_id") or r.get("promo_name")]
++    job_order_promo_count = len(promo_orders)
++    promo_counts = {}
++    for r in promo_orders:
++        name = str(r.get("promo_name") or r.get("promo_id") or "Unknown Promo").strip()
++        promo_counts[name] = promo_counts.get(name, 0) + 1
++    job_order_promo_breakdown = [{"name": name, "count": count} for name, count in promo_counts.items()]
+     txn_gcash_revenue = 0
+     txn_gcash_count = 0
+     for txn in txns:
+@@ -684,12 +739,19 @@
+     gcash_job_orders = [r for r in job_orders if int(r.get("paid_by_gcash") or 0) == 1]
+     gcash_job_order_count = txn_gcash_count + len(gcash_job_orders) + post_cycle_transfer_count
+     gcash_revenue = txn_gcash_revenue + sum(int(r.get("total_amount") or 0) for r in gcash_job_orders) + post_cycle_transfer_amount
++
++    analytics_settings = get_analytics_settings()
++    include_service_in_net = bool(analytics_settings.get("include_service_revenue_in_net", False))
++    _svc_adj = 0 if include_service_in_net else -service_tips
++
+     cash_sales, cash_revenue = _compute_cash_sales_and_net(
+-        gross_collected,
++        total_sales,
+         txn_gcash_revenue,
+         post_cycle_transfer_amount,
+         total_expenses,
++        service_adjustment=_svc_adj,
+     )
++    net_sales = total_sales + _svc_adj - total_expenses
+     job_order_breakdown = [
+         {
+             "job_order_no": r.get("job_order_no") or r.get("id"),
+@@ -732,13 +794,15 @@
+         "job_order_used_count": job_order_used_count,
+         "job_order_open_count": job_order_open_count,
+         "job_order_total_amount": job_order_total_amount,
++        "job_order_promo_count": job_order_promo_count,
++        "job_order_promo_breakdown": job_order_promo_breakdown,
+         "gcash_job_order_count": gcash_job_order_count,
+         "gcash_revenue": gcash_revenue,
+         "post_cycle_transfer_count": post_cycle_transfer_count,
+         "post_cycle_transfer_amount": post_cycle_transfer_amount,
+         "job_order_breakdown": job_order_breakdown,
+         "expense_breakdown": expense_breakdown,
+-        "net_sales": total_sales - total_expenses,
++        "net_sales": net_sales,
+         "transaction_count": len(txns),
+         "transactions": txns,
+     }
+@@ -755,7 +819,7 @@
+                paid_by_gcash, gcash_amount
+         FROM transactions
+         WHERE started_at >= ? AND started_at <= ?
+-          AND UPPER(status) IN ('COMPLETED', 'SIMULATED')
++          AND status IN ('COMPLETED', 'SIMULATED')
+         ORDER BY started_at ASC
+         """,
+         (day_start, day_end),
+@@ -767,7 +831,7 @@
+         FROM transactions t
+         LEFT JOIN employees e ON e.id = t.employee_id
+         WHERE t.started_at >= ? AND t.started_at <= ?
+-          AND UPPER(t.status) IN ('COMPLETED', 'SIMULATED')
++          AND t.status IN ('COMPLETED', 'SIMULATED')
+         """,
+         (day_start, day_end),
+     ).fetchall()
+@@ -787,9 +851,17 @@
+ 
+     job_order_rows = conn.execute(
+         """
+-        SELECT id, job_order_no, machine_name, status, total_amount, paid_by_gcash
++        SELECT id, job_order_no, machine_name, status, total_amount, paid_by_gcash, promo_id, promo_name
+         FROM job_orders
+         WHERE created_at >= ? AND created_at <= ?
++          AND (
++                status = 'OPEN'
++                OR id IN (
++                    SELECT job_order_id FROM transactions
++                    WHERE job_order_id IS NOT NULL
++                      AND status IN ('COMPLETED', 'SIMULATED')
++                )
++          )
+         ORDER BY created_at ASC
+         """,
+         (day_start, day_end),
+@@ -806,7 +878,7 @@
+     product_revenue = sum(int(t.get("product_total") or 0) for t in txns)
+     service_tips = sum(int(t.get("service_total") or 0) for t in txns)
+     machine_revenue = gross_collected - product_revenue - service_tips
+-    total_sales = machine_revenue + product_revenue
++    total_sales = gross_collected
+ 
+     employee_names = [row["display_name"] for row in employee_rows if row["display_name"]]
+     employee_label = ", ".join(employee_names) if employee_names else "N/A"
+@@ -835,16 +907,31 @@
+     gcash_job_orders = [r for r in job_orders if int(r.get("paid_by_gcash") or 0) == 1]
+     gcash_job_order_count = txn_gcash_count + len(gcash_job_orders) + post_cycle_transfer_count
+     gcash_revenue = txn_gcash_revenue + sum(int(r.get("total_amount") or 0) for r in gcash_job_orders) + post_cycle_transfer_amount
++
++    analytics_settings = get_analytics_settings()
++    include_service_in_net = bool(analytics_settings.get("include_service_revenue_in_net", False))
++    _svc_adj = 0 if include_service_in_net else -service_tips
++
+     cash_sales, cash_revenue = _compute_cash_sales_and_net(
+         total_sales,
+         txn_gcash_revenue,
+         post_cycle_transfer_amount,
+         total_expenses,
++        service_adjustment=_svc_adj,
+     )
++    net_sales = total_sales + _svc_adj - total_expenses
+     job_order_count = len(job_orders)
+     job_order_used_count = sum(1 for r in job_orders if str(r.get("status") or "").upper() == "USED")
+     job_order_open_count = sum(1 for r in job_orders if str(r.get("status") or "").upper() == "OPEN")
+     job_order_total_amount = sum(int(r.get("total_amount") or 0) for r in job_orders)
++
++    promo_orders = [r for r in job_orders if r.get("promo_id") or r.get("promo_name")]
++    job_order_promo_count = len(promo_orders)
++    promo_counts = {}
++    for r in promo_orders:
++        name = str(r.get("promo_name") or r.get("promo_id") or "Unknown Promo").strip()
++        promo_counts[name] = promo_counts.get(name, 0) + 1
++    job_order_promo_breakdown = [{"name": name, "count": count} for name, count in promo_counts.items()]
+     job_order_breakdown = [
+         {
+             "job_order_no": r.get("job_order_no") or r.get("id"),
+@@ -886,13 +973,15 @@
+         "job_order_used_count": job_order_used_count,
+         "job_order_open_count": job_order_open_count,
+         "job_order_total_amount": job_order_total_amount,
++        "job_order_promo_count": job_order_promo_count,
++        "job_order_promo_breakdown": job_order_promo_breakdown,
+         "gcash_job_order_count": gcash_job_order_count,
+         "gcash_revenue": gcash_revenue,
+         "post_cycle_transfer_count": post_cycle_transfer_count,
+         "post_cycle_transfer_amount": post_cycle_transfer_amount,
+         "job_order_breakdown": job_order_breakdown,
+         "expense_breakdown": expense_breakdown,
+-        "net_sales": total_sales - total_expenses,
++        "net_sales": net_sales,
+         "transaction_count": len(txns),
+         "transactions": txns,
+     }
+@@ -971,50 +1060,7 @@
+     }
+ 
+ 
+-def _build_recent_shifts_summary_receipt_data(limit_count=None):
+-    fallback_limit = get_recent_shift_summary_count()
+-    try:
+-        requested_count = int(limit_count if limit_count is not None else fallback_limit)
+-    except (TypeError, ValueError):
+-        requested_count = fallback_limit
+-    requested_count = max(1, min(requested_count, 30))
+-
+-    conn = get_connection()
+-
+-    active_row = conn.execute(
+-        """
+-        SELECT id
+-        FROM shift_sessions
+-        WHERE ended_at IS NULL
+-        ORDER BY started_at DESC
+-        LIMIT 1
+-        """
+-    ).fetchone()
+-
+-    remaining_slots = requested_count - (1 if active_row else 0)
+-    if remaining_slots < 0:
+-        remaining_slots = 0
+-
+-    completed_rows = []
+-    if remaining_slots > 0:
+-        completed_rows = conn.execute(
+-            """
+-            SELECT id
+-            FROM shift_sessions
+-            WHERE ended_at IS NOT NULL
+-            ORDER BY started_at DESC
+-            LIMIT ?
+-            """,
+-            (remaining_slots,),
+-        ).fetchall()
+-
+-    conn.close()
+-
+-    shift_ids = []
+-    if active_row and active_row["id"]:
+-        shift_ids.append(active_row["id"])
+-    shift_ids.extend([row["id"] for row in completed_rows if row and row["id"]])
+-
++def _build_shifts_summary_receipt_data_by_ids(shift_ids, requested_count=None, custom_title=None):
+     shifts = []
+     employee_names = []
+     employee_seen = set()
+@@ -1030,6 +1076,12 @@
+     cash_revenue_total = 0
+     gcash_revenue_total = 0
+     gcash_job_order_count_total = 0
++    job_order_count_total = 0
++    job_order_used_count_total = 0
++    job_order_open_count_total = 0
++    job_order_total_amount_total = 0
++    job_order_promo_count_total = 0
++    promo_count_map = {}
+ 
+     machine_usage_map = {}
+     product_map = {}
+@@ -1041,7 +1093,16 @@
+     net_sales = 0
+     total_transactions = 0
+ 
+-    has_active_shift = bool(active_row)
++    has_active_shift = False
++    if shift_ids:
++        conn = get_connection()
++        placeholders = ",".join("?" for _ in shift_ids)
++        active_rows = conn.execute(
++            f"SELECT id FROM shift_sessions WHERE id IN ({placeholders}) AND ended_at IS NULL",
++            shift_ids,
++        ).fetchall()
++        has_active_shift = len(active_rows) > 0
++        conn.close()
+ 
+     for index, shift_id in enumerate(shift_ids, start=1):
+         shift_report = _build_shift_receipt_data(shift_id)
+@@ -1060,6 +1121,14 @@
+         cash_revenue_total += int(shift_report.get("cash_revenue") or 0)
+         gcash_revenue_total += int(shift_report.get("gcash_revenue") or 0)
+         gcash_job_order_count_total += int(shift_report.get("gcash_job_order_count") or 0)
++        job_order_count_total += int(shift_report.get("job_order_count") or 0)
++        job_order_used_count_total += int(shift_report.get("job_order_used_count") or 0)
++        job_order_open_count_total += int(shift_report.get("job_order_open_count") or 0)
++        job_order_total_amount_total += int(shift_report.get("job_order_total_amount") or 0)
++        job_order_promo_count_total += int(shift_report.get("job_order_promo_count") or 0)
++        for item in shift_report.get("job_order_promo_breakdown") or []:
++            name = item["name"]
++            promo_count_map[name] = promo_count_map.get(name, 0) + item["count"]
+ 
+         emp_name = str(shift_report.get("employee_name") or "").strip()
+         if emp_name and emp_name not in employee_seen and emp_name != "N/A":
+@@ -1145,17 +1214,20 @@
+     if has_active_shift:
+         last_time_out = "ACTIVE"
+ 
++    if not custom_title:
++        custom_title = f"LAST {len(shifts)}"
++
+     return {
+         "shop_name": _receipt_shop_name(get_receipt_format_config()),
+         "report_type": "recent_shifts_summary",
+-        "shift_number": f"LAST {len(shifts)}",
++        "shift_number": custom_title,
+         "employee_name": ", ".join(employee_names) if employee_names else "N/A",
+         "time_in": first_time_in or "N/A",
+         "time_out": last_time_out or "N/A",
+-        "report_date": primary_shift_date,
++        "report_date": report_date,
+         "report_date_text": report_date_text,
+         "report_weekday": report_weekday,
+-        "requested_count": requested_count,
++        "requested_count": requested_count or len(shifts),
+         "actual_count": len(shifts),
+         "paper_width_mm": RECEIPT_PAPER_MM,
+         "shifts": shifts,
+@@ -1175,19 +1247,78 @@
+         "net_sales": net_sales,
+         "total_transactions": total_transactions,
+         "transaction_count": total_transactions,
++        "job_order_count": job_order_count_total,
++        "job_order_used_count": job_order_used_count_total,
++        "job_order_open_count": job_order_open_count_total,
++        "job_order_total_amount": job_order_total_amount_total,
++        "job_order_promo_count": job_order_promo_count_total,
++        "job_order_promo_breakdown": [{"name": name, "count": count} for name, count in promo_count_map.items()],
+     }
+ 
+ 
++def _build_recent_shifts_summary_receipt_data(limit_count=None):
++    fallback_limit = get_recent_shift_summary_count()
++    try:
++        requested_count = int(limit_count if limit_count is not None else fallback_limit)
++    except (TypeError, ValueError):
++        requested_count = fallback_limit
++    requested_count = max(1, min(requested_count, 30))
++
++    conn = get_connection()
++
++    active_row = conn.execute(
++        """
++        SELECT id
++        FROM shift_sessions
++        WHERE ended_at IS NULL
++        ORDER BY started_at DESC
++        LIMIT 1
++        """
++    ).fetchone()
++
++    remaining_slots = requested_count - (1 if active_row else 0)
++    if remaining_slots < 0:
++        remaining_slots = 0
++
++    completed_rows = []
++    if remaining_slots > 0:
++        completed_rows = conn.execute(
++            """
++            SELECT id
++            FROM shift_sessions
++            WHERE ended_at IS NOT NULL
++            ORDER BY started_at DESC
++            LIMIT ?
++            """,
++            (remaining_slots,),
++        ).fetchall()
++
++    conn.close()
++
++    shift_ids = []
++    if active_row and active_row["id"]:
++        shift_ids.append(active_row["id"])
++    shift_ids.extend([row["id"] for row in completed_rows if row and row["id"]])
++
++    return _build_shifts_summary_receipt_data_by_ids(
++        shift_ids,
++        requested_count=requested_count,
++        custom_title=f"LAST {len(shift_ids)}"
++    )
++
++
+ def _render_transaction_receipt_text(report):
+     width = max(24, min(64, int(RECEIPT_TEXT_WIDTH)))
+     divider = "-" * width
+     config = get_receipt_format_config()
+-    lines = [
++    top_spacing = int(config.get("top_spacing_lines", 3))
++    lines = [""] * top_spacing
++    lines.extend([
+         _receipt_shop_name(config),
+         divider,
+         "TRANSACTION RECEIPT",
+         divider,
+-    ]
++    ])
+ 
+     ordered_sections = _receipt_order(
+         config,
+@@ -1256,7 +1387,8 @@
+     lines.append(divider)
+     if _receipt_enabled(config, "common.generated_footer"):
+         lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+-    lines.extend(["", ""])
++    bottom_spacing = int(config.get("bottom_spacing_lines", 6))
++    lines.extend([""] * bottom_spacing)
+     return "\n".join(lines)
+ 
+ 
+@@ -1401,11 +1533,13 @@
+     employees = ", ".join(report.get("employees") or []) or "N/A"
+     customers = ", ".join(report.get("customers") or []) or "N/A"
+ 
+-    lines = [
++    top_spacing = int(config.get("top_spacing_lines", 3))
++    lines = [""] * top_spacing
++    lines.extend([
+         _receipt_shop_name(config),
+         divider,
+         "BULK ACTIVATION RECEIPT",
+-    ]
++    ])
+ 
+     ordered_sections = _receipt_order(
+         config,
+@@ -1475,7 +1609,8 @@
+     lines.append(divider)
+     if _receipt_enabled(config, "common.generated_footer"):
+         lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+-    lines.extend(["", ""])
++    bottom_spacing = int(config.get("bottom_spacing_lines", 6))
++    lines.extend([""] * bottom_spacing)
+     return "\n".join(lines)
+ 
+ 
+@@ -1513,11 +1648,13 @@
+     divider = "-" * width
+     config = get_receipt_format_config()
+ 
+-    lines = [
++    top_spacing = int(config.get("top_spacing_lines", 3))
++    lines = [""] * top_spacing
++    lines.extend([
+         _receipt_shop_name(config),
+         divider,
+         "JOB ORDER RECEIPT",
+-    ]
++    ])
+ 
+     ordered_sections = _receipt_order(
+         config,
+@@ -1584,7 +1721,8 @@
+     lines.append(divider)
+     if _receipt_enabled(config, "common.generated_footer"):
+         lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+-    lines.extend(["", ""])
++    bottom_spacing = int(config.get("bottom_spacing_lines", 6))
++    lines.extend([""] * bottom_spacing)
+     return "\n".join(lines)
+ 
+ 
+@@ -1649,7 +1787,9 @@
+     divider = "-" * width
+     config = get_receipt_format_config()
+ 
+-    lines = [
++    top_spacing = int(config.get("top_spacing_lines", 3))
++    lines = [""] * top_spacing
++    lines.extend([
+         _receipt_shop_name(config),
+         divider,
+         "JOB ORDER RECEIPT",
+@@ -1662,7 +1802,7 @@
+         _line("Cashier", report.get("cashier") or "N/A", width),
+         divider,
+         "ORDER LINES",
+-    ]
++    ])
+ 
+     for row in report.get("orders") or []:
+         order_no = row.get("job_order_no") or row.get("id") or "N/A"
+@@ -1702,7 +1842,8 @@
+ 
+     if _receipt_enabled(config, "common.generated_footer"):
+         lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+-    lines.extend(["", ""])
++    bottom_spacing = int(config.get("bottom_spacing_lines", 6))
++    lines.extend([""] * bottom_spacing)
+     return "\n".join(lines)
+ 
+ 
+@@ -1815,6 +1956,12 @@
+     if not payload:
+         return jsonify({"error": "Shift not found"}), 404
+ 
++    config = get_receipt_format_config()
++    payload["top_spacing_lines"] = config.get("top_spacing_lines", 3)
++    payload["bottom_spacing_lines"] = config.get("bottom_spacing_lines", 6)
++    payload["top_padding_px"] = config.get("top_padding_px", 4)
++    payload["bottom_padding_px"] = config.get("bottom_padding_px", 4)
++
+     printed_by = request.args.get("printed_by")
+     log_print_job("shift", shift_id, printed_by=printed_by)
+ 
+@@ -1830,6 +1977,12 @@
+         return jsonify({"error": "Invalid date format; use YYYY-MM-DD"}), 400
+ 
+     payload = _build_day_receipt_data(day_str)
++    config = get_receipt_format_config()
++    payload["top_spacing_lines"] = config.get("top_spacing_lines", 3)
++    payload["bottom_spacing_lines"] = config.get("bottom_spacing_lines", 6)
++    payload["top_padding_px"] = config.get("top_padding_px", 4)
++    payload["bottom_padding_px"] = config.get("bottom_padding_px", 4)
++
+     printed_by = request.args.get("printed_by")
+     log_print_job("day", day_str, printed_by=printed_by)
+ 
+@@ -1845,6 +1998,12 @@
+     if not payload:
+         return jsonify({"error": "No completed shifts found for summary receipt"}), 404
+ 
++    config = get_receipt_format_config()
++    payload["top_spacing_lines"] = config.get("top_spacing_lines", 3)
++    payload["bottom_spacing_lines"] = config.get("bottom_spacing_lines", 6)
++    payload["top_padding_px"] = config.get("top_padding_px", 4)
++    payload["bottom_padding_px"] = config.get("bottom_padding_px", 4)
++
+     receipt_text = _render_recent_shifts_summary_receipt_text(payload)
+     return render_template(
+         "receipt_print.html",
+@@ -2042,6 +2201,82 @@
+     )
+ 
+ 
++@reports_bp.route("/reports/shifts/summary/print", methods=["POST"])
++def print_shifts_summary_direct():
++    data = request.get_json(silent=True) or {}
++    shift_ids = data.get("shift_ids") if isinstance(data.get("shift_ids"), list) else []
++    if not shift_ids:
++        return jsonify({"error": "No shift IDs specified"}), 400
++
++    payload = _build_shifts_summary_receipt_data_by_ids(
++        shift_ids,
++        custom_title=f"SELECTED {len(shift_ids)}"
++    )
++    if not payload:
++        return jsonify({"error": "No shifts found for selected IDs"}), 404
++
++    printed_by = data.get("printed_by") or request.args.get("printed_by")
++    printer_name = data.get("printer") or request.args.get("printer")
++    copies = data.get("copies") or request.args.get("copies") or 1
++
++    log_print_job(
++        "recent_shifts_summary",
++        f"selected:{len(shift_ids)}",
++        printed_by=printed_by,
++    )
++
++    try:
++        result = _send_to_cups(
++            _render_recent_shifts_summary_receipt_text(payload),
++            title=f"LaundryLink Summary {payload.get('actual_count') or 0} Shifts",
++            printer_name=printer_name,
++            copies=copies,
++        )
++    except (RuntimeError, ValueError) as exc:
++        return jsonify({"error": str(exc)}), 500
++
++    return jsonify(
++        {
++            "status": "ok",
++            "report_type": "recent_shifts_summary",
++            "actual_count": payload.get("actual_count") or 0,
++            "total_sales": payload.get("total_sales") or 0,
++            "total_expenses": payload.get("total_expenses") or 0,
++            "net_sales": payload.get("net_sales") or 0,
++            "printer": result["printer"],
++            "job": result["job"],
++        }
++    )
++
++
++@reports_bp.route("/reports/shifts/summary/preview", methods=["GET"])
++def preview_shifts_summary_receipt():
++    shift_ids_str = request.args.get("shift_ids") or ""
++    shift_ids = [s.strip() for s in shift_ids_str.split(",") if s.strip()]
++    if not shift_ids:
++        return jsonify({"error": "No shift IDs specified"}), 400
++
++    payload = _build_shifts_summary_receipt_data_by_ids(
++        shift_ids,
++        custom_title=f"SELECTED {len(shift_ids)}"
++    )
++    if not payload:
++        return jsonify({"error": "No shifts found for selected IDs"}), 404
++
++    config = get_receipt_format_config()
++    payload["top_spacing_lines"] = config.get("top_spacing_lines", 3)
++    payload["bottom_spacing_lines"] = config.get("bottom_spacing_lines", 6)
++    payload["top_padding_px"] = config.get("top_padding_px", 4)
++    payload["bottom_padding_px"] = config.get("bottom_padding_px", 4)
++
++    receipt_text = _render_recent_shifts_summary_receipt_text(payload)
++    return render_template(
++        "receipt_print.html",
++        report=payload,
++        receipt_text=receipt_text,
++    )
++
++
+ @reports_bp.route("/reports/printers", methods=["GET"])
+ def list_printers():
+     printers = _discover_cups_printers()
+diff -ur /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/security.py /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/security.py
+--- /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/routes/security.py	2026-06-21 21:37:41.877962668 +0800
++++ /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/routes/security.py	2026-06-21 22:03:24.145968980 +0800
+@@ -3,7 +3,7 @@
+ from flask import jsonify, request
+ 
+ 
+-ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234")
++ADMIN_PIN = os.environ.get("ADMIN_PIN", "123456")
+ 
+ 
+ def _extract_admin_pin():

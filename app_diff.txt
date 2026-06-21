@@ -1,0 +1,85 @@
+--- /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylinkV2/app.py	2026-06-21 21:37:41.871492029 +0800
++++ /home/kai/washer/Laundrylink_Prototype/laundrylinkV3/laundrylink-pi/app.py	2026-06-21 22:03:24.274965612 +0800
+@@ -4,7 +4,6 @@
+ from datetime import datetime
+ from dotenv import load_dotenv
+ from flask import Flask, jsonify
+-from flask_cors import CORS
+ from database import get_all_machines, init_db, upsert_machine
+ from routes import (
+     dashboard_bp,
+@@ -15,6 +14,7 @@
+     transactions_bp,
+ )
+ from services.sync import init_sync, is_sync_enabled
++from services.emailing import init_email_scheduler
+ 
+ load_dotenv()
+ 
+@@ -40,32 +40,12 @@
+ 
+ 
+ def validate_env():
+-    """Validate required machine config exists. Cloud config is optional."""
+-    has_cloud_url = bool(os.environ.get("CLOUD_URL"))
+-    has_api_key = bool(os.environ.get("API_KEY"))
+-    has_location_id = bool(os.environ.get("LOCATION_ID"))
+-
+-    if (has_cloud_url or has_api_key) and not has_location_id:
+-        print("FATAL: LOCATION_ID is required when CLOUD_URL or API_KEY is configured")
+-        sys.exit(1)
++    """No validation needed for strictly local mode."""
++    pass
+ 
+ 
+ def get_cloud_config():
+-    """Return cloud config dict when fully configured; otherwise return None."""
+-    cloud_url = os.environ.get("CLOUD_URL")
+-    api_key = os.environ.get("API_KEY")
+-    location_id = os.environ.get("LOCATION_ID")
+-
+-    if cloud_url and api_key and location_id:
+-        return {
+-            "cloud_url": cloud_url,
+-            "api_key": api_key,
+-            "location_id": location_id,
+-        }
+-
+-    if cloud_url or api_key:
+-        print("WARNING: Partial cloud config detected. Cloud sync disabled; using local-only mode.")
+-
++    """Always return None for strictly local mode."""
+     return None
+ 
+ 
+@@ -136,7 +116,6 @@
+     init_db()
+ 
+     app = Flask(__name__)
+-    CORS(app, resources={r"/*": {"origins": "*"}})
+ 
+     @app.route("/health", methods=["GET"])
+     def health():
+@@ -171,12 +150,16 @@
+             ],
+         })
+ 
+-    app.register_blueprint(dashboard_bp, url_prefix="/api")
+-    app.register_blueprint(inventory_bp, url_prefix="/api")
+-    app.register_blueprint(machines_bp, url_prefix="/api")
+-    app.register_blueprint(reports_bp, url_prefix="/api")
+-    app.register_blueprint(shifts_bp, url_prefix="/api")
+-    app.register_blueprint(transactions_bp, url_prefix="/api")
++    app.register_blueprint(dashboard_bp)
++    app.register_blueprint(inventory_bp)
++    app.register_blueprint(machines_bp)
++    app.register_blueprint(reports_bp)
++    app.register_blueprint(shifts_bp)
++    app.register_blueprint(transactions_bp)
++
++    # Start the background email scheduler
++    init_email_scheduler(app)
++
+     return app
+ 
+ 
