@@ -8,67 +8,78 @@ let isAdminUnlocked = false;
 
 function renderMorePage() {
   document.getElementById("content").innerHTML = `
-    <div class="grid-cols-2" style="grid-template-columns: 0.9fr 1.1fr; gap: var(--space-md); align-items: start;">
+    <div class="split-layout-admin">
       
       <!-- LEFT COLUMN: SHIFTS & CLOCKING -->
       <div class="list-group">
         
         <!-- Employee Clocking Card -->
-        <div class="card" id="shift-clock-card">
-          <div class="card-header-row">
-            <h3 class="card-title">Attendant Shift Manager</h3>
-          </div>
-          
-          <div id="shift-manager-content">
-            <div class="initial-loader"><div class="spinner"></div></div>
+        <div class="machine-card-shell" id="shift-clock-card">
+          <div class="machine-card-inner" style="min-height: auto;">
+            <div class="card-header-row">
+              <h3 class="card-title">Attendant Shift Manager</h3>
+            </div>
+            
+            <div id="shift-manager-content">
+              <div class="initial-loader"><div class="spinner"></div></div>
+            </div>
           </div>
         </div>
 
         <!-- Inventory List Card -->
-        <div class="card">
-          <div class="card-header-row">
-            <h3 class="card-title">Inventory Catalog</h3>
-            <span class="badge badge-idle" id="inv-stock-badge">0 Items</span>
-          </div>
-          
-          <div class="table-container" style="max-height: 380px;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Stock</th>
-                  <th>Boxes</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="inventory-table-body">
-                <tr>
-                  <td colspan="4" style="text-align: center; color: var(--text-muted);">Loading catalog...</td>
-                </tr>
-              </tbody>
-            </table>
+        <div class="machine-card-shell">
+          <div class="machine-card-inner" style="min-height: auto;">
+            <div class="card-header-row">
+              <h3 class="card-title">Inventory Catalog</h3>
+              <span class="badge badge-idle" id="inv-stock-badge">0 Items</span>
+            </div>
+            
+            <div class="table-container" style="max-height: 380px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Stock</th>
+                    <th>Boxes</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-table-body">
+                  <tr>
+                    <td colspan="4" style="text-align: center; color: var(--text-muted);">Loading catalog...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
       </div>
 
       <!-- RIGHT COLUMN: ADMIN CONTROLS (PIN LOCKED) -->
-      <div class="card" id="admin-settings-card">
-        <div class="card-header-row">
-          <h3 class="card-title">System Administration</h3>
-          <span class="badge badge-offline" id="admin-lock-status">LOCKED</span>
-        </div>
+      <div class="machine-card-shell" id="admin-settings-card">
+        <div class="machine-card-inner" style="min-height: auto;">
+          <div class="card-header-row">
+            <h3 class="card-title">System Administration</h3>
+            <span class="badge badge-offline" id="admin-lock-status">LOCKED</span>
+          </div>
 
-        <div id="admin-panel-content">
-          <!-- Lock screen form -->
-          <form id="admin-lock-form" onsubmit="unlockAdminPanel(event)" style="padding: 1.5rem 0; text-align: center;">
-            <svg width="40" height="40" fill="none" stroke="var(--text-muted)" stroke-width="2" viewBox="0 0 24 24" style="margin-bottom: 1rem;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-            <div class="form-group" style="max-width: 240px; margin: 0 auto 1rem;">
-              <label class="form-label" for="adm-pin">Enter Admin Access PIN</label>
-              <input type="password" id="adm-pin" maxlength="6" required placeholder="••••" style="text-align: center; font-size: 1.5rem; letter-spacing: 0.2em;">
-            </div>
-            <button class="btn btn-primary" type="submit" style="min-width: 140px;">Unlock Settings</button>
-          </form>
+          <div id="admin-panel-content">
+            <!-- Lock screen form -->
+            <form id="admin-lock-form" onsubmit="unlockAdminPanel(event)" style="padding: 1.5rem 0; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
+              <svg width="40" height="40" fill="none" stroke="var(--text-muted)" stroke-width="2" viewBox="0 0 24 24" style="margin-bottom: 1rem;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <div class="form-group" style="max-width: 240px; margin: 0 auto 1.5rem; width: 100%;">
+                <label class="form-label" for="adm-pin">Enter Admin Access PIN</label>
+                <input type="password" id="adm-pin" maxlength="6" required placeholder="••••" style="text-align: center; font-size: 1.5rem; letter-spacing: 0.2em; min-height: 48px; border-radius: 12px;">
+              </div>
+              <button class="btn btn-primary" type="submit" style="min-width: 160px;">
+                <span>Unlock Settings</span>
+                <span class="btn-icon-circle">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </span>
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 

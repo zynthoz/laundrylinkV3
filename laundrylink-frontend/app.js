@@ -14,6 +14,7 @@ let globalShiftState = null;
 // Clock tick
 function initClock() {
   const timeEl = document.getElementById("top-bar-time");
+  if (!timeEl) return;
   function tick() {
     const now = new Date();
     timeEl.textContent = now.toLocaleTimeString("en-US", {

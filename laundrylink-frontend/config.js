@@ -5,5 +5,5 @@ const CONFIG = {
     ? 'http://127.0.0.1:5000/api' 
     : window.location.origin + '/api',
   LOCATION_ID: "local",
-  SHOP_NAME: "LaundryLink — Counter Panel",
+  SHOP_NAME: "LaundryLink",
 };

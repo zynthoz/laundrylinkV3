@@ -55,83 +55,93 @@ function renderReportsPage() {
       </div>
     </div>
 
-    <!-- Two Column Breakdown (Stretched columns) -->
-    <div class="grid-cols-2" style="grid-template-columns: 1.25fr 0.75fr; gap: var(--space-md); align-items: stretch; margin-bottom: 0;">
+    <!-- Two Column Breakdown -->
+    <div class="split-layout-reports">
       
       <!-- LEFT COLUMN: Transactions Log Card -->
-      <div class="card" style="display: flex; flex-direction: column; margin-bottom: 0; height: 100%;">
-        <div class="card-header-row" style="margin-bottom: var(--space-md);">
-          <h3 class="card-title">Recent Transactions Log</h3>
-          <span class="badge badge-idle" id="rep-tx-count">0 Sales</span>
-        </div>
-        
-        <div class="table-container" style="flex: 1; overflow-y: auto; min-height: 380px;">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Machine</th>
-                <th>Customer</th>
-                <th>Method</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody id="reports-transactions-body">
-              <tr>
-                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No sales recorded yet.</td>
-              </tr>
-            </tbody>
-          </table>
+      <div class="machine-card-shell" style="height: 100%; display: flex; flex-direction: column;">
+        <div class="machine-card-inner" style="flex: 1; min-height: auto; display: flex; flex-direction: column; justify-content: flex-start; padding: var(--space-md);">
+          <div class="card-header-row" style="margin-bottom: var(--space-md);">
+            <h3 class="card-title">Recent Transactions Log</h3>
+            <span class="badge badge-idle" id="rep-tx-count">0 Sales</span>
+          </div>
+          
+          <div class="table-container" style="flex: 1; overflow: auto; min-height: 380px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Machine</th>
+                  <th>Customer</th>
+                  <th>Method</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody id="reports-transactions-body">
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No sales recorded yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <!-- RIGHT COLUMN: Compact Unified Log Adjustments Card -->
-      <div class="card" style="display: flex; flex-direction: column; margin-bottom: 0; height: 100%;">
-        <div class="tab-header">
-          <button class="tab-link active" id="tab-adj-expense" onclick="switchAdjustmentTab('expense')">Log Expense</button>
-          <button class="tab-link" id="tab-adj-gcash" onclick="switchAdjustmentTab('gcash')">Log GCash</button>
-        </div>
-        
-        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
-          <!-- Tab 1: Expense Form -->
-          <form id="expense-logging-form" onsubmit="logManualExpense(event)" style="display: flex; flex-direction: column; gap: var(--space-sm);">
-            <div class="form-group" style="margin-bottom: var(--space-sm);">
-              <label class="form-label" for="exp-name">Expense Item/Vendor *</label>
-              <input type="text" id="exp-name" required placeholder="Water refill, soap, box tags, etc.">
-            </div>
-            
-            <div class="grid-cols-2" style="gap: 12px; margin-bottom: var(--space-sm);">
-              <div class="form-group" style="margin-bottom: 0;">
-                <label class="form-label" for="exp-amount">Total Cost (₱) *</label>
-                <input type="number" id="exp-amount" required min="1" placeholder="150">
-              </div>
-              <div class="form-group" style="margin-bottom: 0;">
-                <label class="form-label" for="exp-qty">Quantity</label>
-                <input type="number" id="exp-qty" min="1" placeholder="1">
-              </div>
-            </div>
-            
-            <button class="btn btn-danger" type="submit" style="width: 100%; margin-top: var(--space-sm);">
-              Record Shift Expense
-            </button>
-          </form>
+      <div class="machine-card-shell" style="height: 100%; display: flex; flex-direction: column;">
+        <div class="machine-card-inner" style="flex: 1; min-height: auto; display: flex; flex-direction: column; justify-content: flex-start; padding: var(--space-md);">
+          <div class="tab-header" style="width: 100%;">
+            <button class="tab-link active" id="tab-adj-expense" onclick="switchAdjustmentTab('expense')">Log Expense</button>
+            <button class="tab-link" id="tab-adj-gcash" onclick="switchAdjustmentTab('gcash')">Log GCash</button>
+          </div>
           
-          <!-- Tab 2: GCash Form (hidden by default) -->
-          <form id="postcycle-logging-form" onsubmit="logPostCycleGcashTransfer(event)" style="display: none; flex-direction: column; gap: var(--space-sm);">
-            <div class="form-group" style="margin-bottom: var(--space-sm);">
-              <label class="form-label" for="pc-amount">GCash Transfer Amount (₱) *</label>
-              <input type="number" id="pc-amount" required min="1" placeholder="60">
-            </div>
+          <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;">
+            <!-- Tab 1: Expense Form -->
+            <form id="expense-logging-form" onsubmit="logManualExpense(event)" style="display: flex; flex-direction: column; gap: var(--space-sm);">
+              <div class="form-group" style="margin-bottom: var(--space-sm);">
+                <label class="form-label" for="exp-name">Expense Item/Vendor *</label>
+                <input type="text" id="exp-name" required placeholder="Water refill, soap, box tags, etc.">
+              </div>
+              
+              <div class="grid-cols-2" style="gap: 12px; margin-bottom: var(--space-sm);">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label" for="exp-amount">Total Cost (₱) *</label>
+                  <input type="number" id="exp-amount" required min="1" placeholder="150">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label" for="exp-qty">Quantity</label>
+                  <input type="number" id="exp-qty" min="1" placeholder="1">
+                </div>
+              </div>
+              
+              <button class="btn btn-danger" type="submit" style="width: 100%; margin-top: var(--space-sm);">
+                <span>Record Shift Expense</span>
+                <span class="btn-icon-circle">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </span>
+              </button>
+            </form>
             
-            <div class="form-group" style="margin-bottom: var(--space-sm);">
-              <label class="form-label" for="pc-note">Reference/Note *</label>
-              <input type="text" id="pc-note" required placeholder="GCash received for Washer 2 standard">
-            </div>
-            
-            <button class="btn btn-primary" type="submit" style="width: 100%; margin-top: var(--space-sm);">
-              Record GCash Adjustment
-            </button>
-          </form>
+            <!-- Tab 2: GCash Form (hidden by default) -->
+            <form id="postcycle-logging-form" onsubmit="logPostCycleGcashTransfer(event)" style="display: none; flex-direction: column; gap: var(--space-sm);">
+              <div class="form-group" style="margin-bottom: var(--space-sm);">
+                <label class="form-label" for="pc-amount">GCash Transfer Amount (₱) *</label>
+                <input type="number" id="pc-amount" required min="1" placeholder="60">
+              </div>
+              
+              <div class="form-group" style="margin-bottom: var(--space-sm);">
+                <label class="form-label" for="pc-note">Reference/Note *</label>
+                <input type="text" id="pc-note" required placeholder="GCash received for Washer 2 standard">
+              </div>
+              
+              <button class="btn btn-primary" type="submit" style="width: 100%; margin-top: var(--space-sm);">
+                <span>Record GCash Adjustment</span>
+                <span class="btn-icon-circle">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </span>
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 

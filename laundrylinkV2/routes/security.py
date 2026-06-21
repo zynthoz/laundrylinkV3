@@ -3,7 +3,7 @@ import os
 from flask import jsonify, request
 
 
-ADMIN_PIN = os.environ.get("ADMIN_PIN", "232322323abab")
+ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234")
 
 
 def _extract_admin_pin():

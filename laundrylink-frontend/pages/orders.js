@@ -6,115 +6,121 @@ let customerList = [];
 
 function renderOrdersPage() {
   document.getElementById("content").innerHTML = `
-    <div class="grid-cols-2" style="grid-template-columns: 1.2fr 0.8fr; align-items: start; height: 100%;">
+    <div class="split-layout-orders">
       
       <!-- LEFT COLUMN: OPEN ORDERS LIST -->
-      <div class="card" style="height: 100%; display: flex; flex-direction: column;">
-        <div class="card-header-row">
-          <h3 class="card-title">Active Job Orders</h3>
-          <span class="badge badge-busy" id="open-orders-count">0 Open</span>
-        </div>
-        
-        <div class="filter-bar">
-          <div class="search-input-wrapper">
-            <svg class="search-input-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <input type="text" id="order-search" placeholder="Search by customer name or phone..." oninput="filterOpenOrders()">
+      <div class="machine-card-shell" style="height: 100%; display: flex; flex-direction: column;">
+        <div class="machine-card-inner" style="flex: 1; min-height: auto; display: flex; flex-direction: column; justify-content: flex-start;">
+          <div class="card-header-row">
+            <h3 class="card-title">Active Job Orders</h3>
+            <span class="badge badge-busy" id="open-orders-count">0 Open</span>
           </div>
-          <button class="btn btn-secondary" onclick="loadOpenOrders()" style="min-height: 48px; padding: 0 14px;">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18v3H4"></path></svg>
-          </button>
-        </div>
-        
-        <div class="list-group" id="open-orders-container" style="overflow-y: auto; max-height: 520px; flex: 1;">
-          <div class="initial-loader">
-            <div class="spinner"></div>
-            <p>Loading open transactions...</p>
+          
+          <div class="filter-bar">
+            <div class="search-input-wrapper">
+              <svg class="search-input-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" id="order-search" placeholder="Search by customer name..." oninput="filterOpenOrders()">
+            </div>
+            <button class="btn btn-secondary" onclick="loadOpenOrders()" style="min-height: 48px; padding: 0 14px;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18v3H4"></path></svg>
+            </button>
+          </div>
+          
+          <div class="list-group" id="open-orders-container" style="overflow-y: auto; max-height: 520px; flex: 1;">
+            <div class="initial-loader">
+              <div class="spinner"></div>
+              <p>Loading open transactions...</p>
+            </div>
           </div>
         </div>
       </div>
       
       <!-- RIGHT COLUMN: CREATE NEW ORDER -->
-      <div class="card">
-        <div class="card-header-row">
-          <h3 class="card-title">New Job Order</h3>
+      <div class="machine-card-shell" style="align-self: start;">
+        <div class="machine-card-inner" style="min-height: auto;">
+          <div class="card-header-row">
+            <h3 class="card-title">New Job Order</h3>
+          </div>
+          
+          <form id="new-order-form" onsubmit="createNewJobOrder(event)">
+            <div class="form-group">
+              <label class="form-label" for="order-cust-name">Customer Name *</label>
+              <input type="text" id="order-cust-name" required placeholder="John Doe" list="customer-datalist">
+              <datalist id="customer-datalist"></datalist>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label" for="order-cust-phone">Phone Number</label>
+              <input type="tel" id="order-cust-phone" placeholder="09171234567" pattern="^09\\d{9}$" title="Must be a valid PH mobile number (e.g. 09171234567)">
+            </div>
+  
+            <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
+              <div class="form-group">
+                <label class="form-label" for="order-wash-qty">Washes (Qty)</label>
+                <input type="number" id="order-wash-qty" value="0" min="0" onchange="calculateOrderTotal()">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="order-dry-qty">Dries (Qty)</label>
+                <input type="number" id="order-dry-qty" value="0" min="0" onchange="calculateOrderTotal()">
+              </div>
+            </div>
+            
+            <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
+              <div class="form-group">
+                <label class="form-label" for="order-wash-mode">Wash Setting</label>
+                <select id="order-wash-mode" onchange="calculateOrderTotal()">
+                  <option value="normal">Standard Wash (₱60)</option>
+                  <option value="quick">Quick Wash (₱50)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="order-dry-mode">Dry Setting</label>
+                <select id="order-dry-mode" onchange="calculateOrderTotal()">
+                  <option value="normal">Standard Dry (₱60)</option>
+                  <option value="quick">Quick Dry (₱50)</option>
+                </select>
+              </div>
+            </div>
+  
+            <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
+              <div class="form-group">
+                <label class="form-label" for="order-product-amount">Add-on Products (₱)</label>
+                <input type="number" id="order-product-amount" value="0" min="0" onchange="calculateOrderTotal()" placeholder="Detergent, etc.">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="order-service-amount">Add-on Services (₱)</label>
+                <input type="number" id="order-service-amount" value="0" min="0" onchange="calculateOrderTotal()" placeholder="Folding, etc.">
+              </div>
+            </div>
+  
+            <div class="form-group">
+              <label class="form-label">Payment Method</label>
+              <div class="grid-cols-2" style="gap: var(--space-sm);">
+                <label class="btn btn-secondary" style="padding: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                  <input type="radio" name="order-payment" value="cash" checked style="width: auto; min-height: auto;" onchange="updatePaymentSelectUI()"> Cash
+                </label>
+                <label class="btn btn-secondary" style="padding: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                  <input type="radio" name="order-payment" value="gcash" style="width: auto; min-height: auto;" onchange="updatePaymentSelectUI()"> GCash
+                </label>
+              </div>
+            </div>
+  
+            <div class="calc-box" style="margin-top: 1rem; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              <div style="display: flex; justify-content: space-between; font-weight: 700;">
+                <span>Total Est. Price:</span>
+                <span id="order-total-price" style="color: var(--accent); font-size: 1.15rem;">₱0.00</span>
+              </div>
+            </div>
+  
+            <button class="btn btn-primary" type="submit" style="width: 100%; margin-top: 1rem;">
+              <span>Create & Print Receipt</span>
+              <span class="btn-icon-circle">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </span>
+            </button>
+          </form>
         </div>
-        
-        <form id="new-order-form" onsubmit="createNewJobOrder(event)">
-          <div class="form-group">
-            <label class="form-label" for="order-cust-name">Customer Name *</label>
-            <input type="text" id="order-cust-name" required placeholder="John Doe" list="customer-datalist">
-            <datalist id="customer-datalist"></datalist>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label" for="order-cust-phone">Phone Number</label>
-            <input type="tel" id="order-cust-phone" placeholder="09171234567" pattern="^09\\d{9}$" title="Must be a valid PH mobile number (e.g. 09171234567)">
-          </div>
-
-          <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
-            <div class="form-group">
-              <label class="form-label" for="order-wash-qty">Washes (Qty)</label>
-              <input type="number" id="order-wash-qty" value="0" min="0" onchange="calculateOrderTotal()">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="order-dry-qty">Dries (Qty)</label>
-              <input type="number" id="order-dry-qty" value="0" min="0" onchange="calculateOrderTotal()">
-            </div>
-          </div>
-          
-          <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
-            <div class="form-group">
-              <label class="form-label" for="order-wash-mode">Wash Setting</label>
-              <select id="order-wash-mode" onchange="calculateOrderTotal()">
-                <option value="normal">Standard Wash (₱60)</option>
-                <option value="quick">Quick Wash (₱50)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="order-dry-mode">Dry Setting</label>
-              <select id="order-dry-mode" onchange="calculateOrderTotal()">
-                <option value="normal">Standard Dry (₱60)</option>
-                <option value="quick">Quick Dry (₱50)</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
-            <div class="form-group">
-              <label class="form-label" for="order-product-amount">Add-on Products (₱)</label>
-              <input type="number" id="order-product-amount" value="0" min="0" onchange="calculateOrderTotal()" placeholder="Detergent, etc.">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="order-service-amount">Add-on Services (₱)</label>
-              <input type="number" id="order-service-amount" value="0" min="0" onchange="calculateOrderTotal()" placeholder="Folding, etc.">
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Payment Method</label>
-            <div class="grid-cols-2" style="gap: var(--space-sm);">
-              <label class="btn btn-secondary" style="padding: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                <input type="radio" name="order-payment" value="cash" checked style="width: auto; min-height: auto;" onchange="updatePaymentSelectUI()"> Cash
-              </label>
-              <label class="btn btn-secondary" style="padding: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                <input type="radio" name="order-payment" value="gcash" style="width: auto; min-height: auto;" onchange="updatePaymentSelectUI()"> GCash
-              </label>
-            </div>
-          </div>
-
-          <div class="calc-box" style="margin-top: 1rem; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);">
-            <div style="display: flex; justify-content: space-between; font-weight: 700;">
-              <span>Total Est. Price:</span>
-              <span id="order-total-price" style="color: var(--accent); font-size: 1.15rem;">₱0.00</span>
-            </div>
-          </div>
-
-          <button class="btn btn-primary" type="submit" style="width: 100%; margin-top: 1rem;">
-            Create & Print Receipt
-          </button>
-        </form>
       </div>
-
     </div>
   `;
   
