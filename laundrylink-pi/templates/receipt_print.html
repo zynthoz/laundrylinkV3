@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Receipt Print</title>
+  <style>
+    body {
+      font-family: "Courier New", Courier, monospace;
+      background: #f2f2f2;
+      margin: 0;
+      padding: 0;
+      color: #111;
+    }
+    .receipt {
+      width: {{ report.paper_width_mm|default(58) }}mm;
+      margin: 0 auto;
+      background: #fff;
+      border: none;
+      padding: {{ report.top_padding_px|default(4) }}px 2px {{ report.bottom_padding_px|default(4) }}px;
+      box-sizing: border-box;
+    }
+    .center { text-align: center; }
+    .title { font-size: 11px; font-weight: 700; line-height: 1.1; }
+    .line { border-top: 1px dashed #000; margin: 4px 0; }
+    .section-title {
+      font-size: 9px;
+      font-weight: 700;
+      margin: 3px 0;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+      font-size: 9px;
+      line-height: 1.15;
+      margin: 1px 0;
+    }
+    .row strong { font-weight: 700; }
+    .label { color: #222; }
+    .val { text-align: right; white-space: normal; word-break: break-word; max-width: 66%; }
+    .footer {
+      margin-top: 6px;
+      font-size: 8px;
+      text-align: center;
+      color: #444;
+    }
+    .print-actions {
+      width: {{ report.paper_width_mm|default(58) }}mm;
+      margin: 8px auto 0;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .btn {
+      border: 1px solid #bbb;
+      background: #fff;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-family: inherit;
+      font-size: 9px;
+      cursor: pointer;
+    }
+    @media print {
+      body { background: #fff; padding: 0; margin: 0; }
+      .receipt { border: none; width: {{ report.paper_width_mm|default(58) }}mm; margin: 0; }
+      .print-actions { display: none; }
+      @page {
+        margin: 1mm;
+        size: {{ report.paper_width_mm|default(58) }}mm auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  {% if receipt_text %}
+  <div class="receipt">
+    <pre style="margin:0;font:inherit;white-space:pre-wrap;word-break:break-word;line-height:1.15;">{{ receipt_text }}</pre>
+  </div>
+  <div class="print-actions">
+    <button class="btn" onclick="window.print()">Print</button>
+    <button class="btn" onclick="window.close()">Close</button>
+  </div>
+  {% else %}
+  <div class="receipt">
+    {% if report.top_spacing_lines %}
+      {% for i in range(report.top_spacing_lines) %}
+        <div style="height: 1.15em;">&nbsp;</div>
+      {% endfor %}
+    {% endif %}
+    <div class="center title">{{ report.shop_name or 'LOYOLA' }}</div>
+
+    <div class="line"></div>
+    {% if report.report_type == 'recent_shifts_summary' %}
+    <div class="row"><span class="label">DATE</span><span class="val">{{ report.report_date_text or report.report_date }}</span></div>
+    {% if report.report_weekday %}
+    <div class="row"><span class="label">DAY</span><span class="val">{{ report.report_weekday }}</span></div>
+    {% endif %}
+    {% else %}
+    <div class="row"><span class="label">DATE</span><span class="val">{{ report.report_date }}</span></div>
+    {% endif %}
+    <div class="row"><span class="label">SHIFT No.</span><span class="val">{{ report.shift_number or 'N/A' }}</span></div>
+
+    <div class="line"></div>
+    <div class="section-title">1) Employee</div>
+    <div class="row"><span class="label">Employee</span><span class="val">{{ report.employee_name }}</span></div>
+    <div class="row"><span class="label">Time In</span><span class="val">{{ report.time_in }}</span></div>
+    <div class="row"><span class="label">Time Out</span><span class="val">{{ report.time_out }}</span></div>
+
+    <div class="line"></div>
+    <div class="section-title">2) Machine Revenue</div>
+    <div class="row"><span class="label">Amount</span><span class="val">P{{ report.machine_revenue }}</span></div>
+    {% if report.machine_usage_breakdown %}
+      {% for machine in report.machine_usage_breakdown %}
+      {% set machine_label = machine.machine_type_label or (machine.machine_type|default('Unknown')|title) %}
+      <div class="row"><span class="label">- {{ machine_label }} Used</span><span class="val">{{ machine.count }}</span></div>
+      <div class="row"><span class="label">{{ machine_label }} Revenue</span><span class="val">P{{ machine.revenue|default(0) }}</span></div>
+      {% endfor %}
+    {% else %}
+      <div class="row"><span class="label">- None</span><span class="val">P0</span></div>
+    {% endif %}
+
+    <div class="line"></div>
+    <div class="section-title">3) Product Revenue</div>
+    {% if report.product_breakdown %}
+      {% for item in report.product_breakdown %}
+      <div class="row"><span class="label">- {{ item.name }} x{{ item.qty }}</span><span class="val">P{{ item.total }}</span></div>
+      {% endfor %}
+    {% else %}
+      <div class="row"><span class="label">- None</span><span class="val">P0</span></div>
+    {% endif %}
+    <div class="row"><span class="label">Total</span><span class="val">P{{ report.product_revenue }}</span></div>
+
+    <div class="line"></div>
+    <div class="section-title">4) Service Tips</div>
+    <div class="row"><span class="label">Total</span><span class="val">P{{ report.service_revenue }}</span></div>
+    {% if report.service_breakdown %}
+      {% for item in report.service_breakdown %}
+      <div class="row"><span class="label">- {{ item.name }} x{{ item.qty }}</span><span class="val">P{{ item.total }}</span></div>
+      {% endfor %}
+    {% else %}
+      <div class="row"><span class="label">- None</span><span class="val">P0</span></div>
+    {% endif %}
+
+    <div class="line"></div>
+    <div class="section-title">5) GCash Revenue</div>
+    <div class="row"><span class="label">Orders</span><span class="val">{{ report.gcash_job_order_count or 0 }}</span></div>
+    <div class="row"><span class="label">Total</span><span class="val">P{{ report.gcash_revenue or 0 }}</span></div>
+
+    <div class="line"></div>
+    <div class="section-title">6) Expenses</div>
+    <div class="row"><span class="label">Total</span><span class="val">P{{ report.total_expenses }}</span></div>
+    {% if report.expense_breakdown %}
+      {% for item in report.expense_breakdown %}
+      <div class="row"><span class="label">- {{ item.name }} x{{ item.count }}</span><span class="val">P{{ item.total }}</span></div>
+      {% endfor %}
+    {% else %}
+      <div class="row"><span class="label">- None</span><span class="val">P0</span></div>
+    {% endif %}
+
+    <div class="line"></div>
+    <div class="section-title">JOB ORDERS SUMMARY</div>
+    <div class="row"><span class="label">Total Orders</span><span class="val">{{ report.job_order_count or 0 }}</span></div>
+    <div class="row"><span class="label">- Used</span><span class="val">{{ report.job_order_used_count or 0 }}</span></div>
+    <div class="row"><span class="label">- Open</span><span class="val">{{ report.job_order_open_count or 0 }}</span></div>
+    <div class="row"><span class="label">Total Revenue</span><span class="val">P{{ report.job_order_total_amount or 0 }}</span></div>
+    <div class="row"><span class="label">Promo Orders</span><span class="val">{{ report.job_order_promo_count or 0 }}</span></div>
+    {% if report.job_order_promo_breakdown %}
+      {% for promo in report.job_order_promo_breakdown %}
+      <div class="row"><span class="label">  - {{ promo.name }}</span><span class="val">x{{ promo.count }}</span></div>
+      {% endfor %}
+    {% endif %}
+
+    <div class="line"></div>
+  <div class="section-title">7) Net Sales</div>
+    <div class="row"><span class="label"><strong>Net</strong></span><span class="val"><strong>P{{ report.net_sales }}</strong></span></div>
+
+    <div class="line"></div>
+    <div class="footer">Generated {{ report.report_type }} receipt</div>
+    {% if report.bottom_spacing_lines %}
+      {% for i in range(report.bottom_spacing_lines) %}
+        <div style="height: 1.15em;">&nbsp;</div>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <div class="print-actions">
+    <button class="btn" onclick="window.print()">Print</button>
+    <button class="btn" onclick="window.close()">Close</button>
+  </div>
+  {% endif %}
+</body>
+</html>

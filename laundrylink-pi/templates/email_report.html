@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #F8F9FC;
+            margin: 0;
+            padding: 0;
+            color: #1A1D26;
+        }
+        .container {
+            width: 100%;
+            max-width: 620px;
+            margin: 30px auto;
+            background-color: #ffffff;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
+        }
+        .header {
+            background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 60%, #3B82F6 100%);
+            color: #ffffff;
+            padding: 34px 40px 28px;
+            text-align: center;
+        }
+        .header-logo {
+            display: inline-block;
+            width: 48px;
+            height: 48px;
+            background: rgba(255,255,255,0.18);
+            border-radius: 12px;
+            margin-bottom: 14px;
+            line-height: 48px;
+            font-size: 24px;
+        }
+        .header h1 {
+            margin: 0 0 6px;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+        }
+        .header .period-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            padding: 4px 14px;
+            font-size: 13px;
+            opacity: 0.95;
+            margin-top: 6px;
+        }
+        .header .freq-tag {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            opacity: 0.75;
+            margin-bottom: 4px;
+        }
+        .content {
+            padding: 32px 36px;
+        }
+        /* ── Highlight summary row ── */
+        .summary-table {
+            width: 100%;
+            border-spacing: 8px;
+            border-collapse: separate;
+            margin-bottom: 28px;
+        }
+        .summary-card {
+            padding: 18px 16px;
+            border-radius: 10px;
+            text-align: center;
+            vertical-align: top;
+            width: 50%;
+        }
+        .summary-card.primary {
+            background-color: #EEF2FF;
+            border: 1px solid #C7D7FD;
+        }
+        .summary-card.primary .summary-value { color: #2563EB; }
+        .summary-card.success {
+            background-color: #ECFDF5;
+            border: 1px solid #A7F3D0;
+        }
+        .summary-card.success .summary-value { color: #059669; }
+        .summary-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 600;
+            color: #5A5F72;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+        }
+        .summary-value {
+            font-size: 26px;
+            font-weight: 700;
+            color: #1A1D26;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+        /* ── Section headings ── */
+        .section-heading {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1A1D26;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            margin: 28px 0 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #E2E5ED;
+        }
+        /* ── Data tables ── */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 4px;
+        }
+        .data-table th, .data-table td {
+            padding: 11px 14px;
+            text-align: left;
+            border-bottom: 1px solid #F0F2F7;
+        }
+        .data-table th {
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 600;
+            color: #9CA0AE;
+            background-color: #F8F9FC;
+        }
+        .data-table td {
+            font-size: 13.5px;
+            color: #1A1D26;
+        }
+        .data-table tr:last-child td { border-bottom: none; }
+        .text-right { text-align: right !important; }
+        .row-total {
+            background-color: #F8F9FC;
+            font-weight: 700;
+        }
+        .row-expenses-total {
+            background-color: #FEF2F2;
+            color: #991B1B;
+            font-weight: 700;
+        }
+        .row-expenses-total td { color: #991B1B; }
+        /* ── Footer ── */
+        .footer {
+            background-color: #F8F9FC;
+            padding: 20px 36px;
+            text-align: center;
+            font-size: 11.5px;
+            color: #9CA0AE;
+            border-top: 1px solid #E2E5ED;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- Header -->
+        <div class="header">
+            <div class="freq-tag">{{ frequency | title }} Analytics Report</div>
+            <h1>{{ report.shop_name or 'LaundryLink' }}</h1>
+            <div class="period-badge">📅 {{ period_label }}</div>
+        </div>
+
+        <div class="content">
+
+            <!-- Top Metrics (always shown) -->
+            <table class="summary-table">
+                <tr>
+                    <td class="summary-card primary">
+                        <div class="summary-label">Gross Collected</div>
+                        <div class="summary-value">₱{{ "{:,.2f}".format(report.gross_collected|float) if report.gross_collected else "0.00" }}</div>
+                    </td>
+                    <td class="summary-card success">
+                        <div class="summary-label">Net Sales</div>
+                        <div class="summary-value">₱{{ "{:,.2f}".format(report.net_sales|float) if report.net_sales else "0.00" }}</div>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Revenue Breakdown -->
+            {% if include_flags.get('include_revenue_breakdown', true) %}
+            <div class="section-heading">Revenue Breakdown</div>
+            <table class="data-table">
+                <tr>
+                    <td>Machine Revenue</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.machine_revenue|float) if report.machine_revenue else "0.00" }}</td>
+                </tr>
+                <tr>
+                    <td>Product Revenue</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.product_revenue|float) if report.product_revenue else "0.00" }}</td>
+                </tr>
+                <tr>
+                    <td>Service Revenue</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.service_revenue|float) if report.service_revenue else "0.00" }}</td>
+                </tr>
+                <tr class="row-total">
+                    <td>Total Sales</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.total_sales|float) if report.total_sales else "0.00" }}</td>
+                </tr>
+            </table>
+            {% endif %}
+
+            <!-- Payment Methods -->
+            {% if include_flags.get('include_payment_methods', true) %}
+            <div class="section-heading">Payment Methods</div>
+            <table class="data-table">
+                <tr>
+                    <td>Cash Sales</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.cash_sales|float) if report.cash_sales else "0.00" }}</td>
+                </tr>
+                <tr>
+                    <td>GCash Revenue</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.gcash_revenue|float) if report.gcash_revenue else "0.00" }}</td>
+                </tr>
+            </table>
+            {% endif %}
+
+            <!-- Expenses -->
+            {% if include_flags.get('include_expenses', true) %}
+            <div class="section-heading">Expenses</div>
+            <table class="data-table">
+                <tr>
+                    <td>Manual Expenses</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.manual_expenses|float) if report.manual_expenses else "0.00" }}</td>
+                </tr>
+                <tr>
+                    <td>Cost of Goods Sold (COGS)</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.cogs_total|float) if report.cogs_total else "0.00" }}</td>
+                </tr>
+                <tr class="row-expenses-total">
+                    <td>Total Expenses</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.total_expenses|float) if report.total_expenses else "0.00" }}</td>
+                </tr>
+            </table>
+            {% endif %}
+
+            <!-- Machine Usage Breakdown -->
+            {% if include_flags.get('include_machine_usage', true) and report.machine_usage_breakdown %}
+            <div class="section-heading">Machine Usage</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th class="text-right">Cycles</th>
+                        <th class="text-right">Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in report.machine_usage_breakdown %}
+                <tr>
+                    <td>{{ row.machine_type_label }}</td>
+                    <td class="text-right">{{ row.count }}</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(row.revenue|float) }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            <!-- Operational Stats -->
+            {% if include_flags.get('include_operational_stats', true) %}
+            <div class="section-heading">Operational Stats</div>
+            <table class="data-table">
+                <tr>
+                    <td>Transactions</td>
+                    <td class="text-right">{{ report.transaction_count or "0" }}</td>
+                </tr>
+                <tr>
+                    <td>Job Orders</td>
+                    <td class="text-right">{{ report.job_order_count or "0" }}</td>
+                </tr>
+                <tr>
+                    <td>Products Used</td>
+                    <td class="text-right">{{ report.products_used or "0" }}</td>
+                </tr>
+                <tr>
+                    <td>Services Used</td>
+                    <td class="text-right">{{ report.services_used or "0" }}</td>
+                </tr>
+                <tr>
+                    <td>GCash Transactions</td>
+                    <td class="text-right">{{ report.gcash_job_order_count or "0" }}</td>
+                </tr>
+            </table>
+
+            <!-- Job Orders & Promos Summary -->
+            <div class="section-heading">Job Orders & Promos</div>
+            <table class="data-table">
+                <tr>
+                    <td>Total Job Orders</td>
+                    <td class="text-right">{{ report.job_order_count or "0" }}</td>
+                </tr>
+                <tr>
+                    <td>Used Job Orders</td>
+                    <td class="text-right">{{ report.job_order_used_count or "0" }}</td>
+                </tr>
+                <tr>
+                    <td>Open Job Orders</td>
+                    <td class="text-right">{{ report.job_order_open_count or "0" }}</td>
+                </tr>
+                <tr>
+                    <td>Job Order Revenue</td>
+                    <td class="text-right">₱{{ "{:,.2f}".format(report.job_order_total_amount|float) if report.job_order_total_amount else "0.00" }}</td>
+                </tr>
+                <tr class="row-total">
+                    <td>Promo Orders</td>
+                    <td class="text-right">{{ report.job_order_promo_count or "0" }}</td>
+                </tr>
+            </table>
+
+            {% if report.job_order_promo_breakdown %}
+            <div class="section-heading" style="margin-top: 15px; font-size: 11px;">Promo Usage Breakdown</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Promo Name</th>
+                        <th class="text-right">Usage Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for promo in report.job_order_promo_breakdown %}
+                <tr>
+                    <td>{{ promo.name }}</td>
+                    <td class="text-right">{{ promo.count }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            {% endif %}
+
+            <!-- Low Stock Alerts -->
+            {% if include_flags.get('include_low_stock_alerts', true) and low_stock_products %}
+            <div class="section-heading" style="color: #DC2626; border-bottom-color: #FECACA;">Low Stock Alerts</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th class="text-right">Stock on Hand</th>
+                        <th class="text-right">Threshold</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for product in low_stock_products %}
+                <tr>
+                    <td>{{ product.name }}</td>
+                    <td class="text-right" style="color: #DC2626; font-weight: 600;">{{ product.stock_on_hand }}</td>
+                    <td class="text-right">{{ product.low_stock_threshold }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+        </div>
+
+        <div class="footer">
+            Automated {{ frequency }} report generated by <strong>LaundryLink</strong>.<br>
+            Period: {{ period_label }}<br>
+            Please do not reply to this email.
+        </div>
+    </div>
+</body>
+</html>
