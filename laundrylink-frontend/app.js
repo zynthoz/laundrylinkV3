@@ -14,7 +14,6 @@ let globalShiftState = null;
 // Clock tick
 function initClock() {
   const timeEl = document.getElementById("top-bar-time");
-  if (!timeEl) return;
   function tick() {
     const now = new Date();
     timeEl.textContent = now.toLocaleTimeString("en-US", {
@@ -39,16 +38,16 @@ async function loadShiftIndicator() {
     if (data.active_shift) {
       globalShiftState = data.active_shift;
       el.className = "shift-indicator active";
-      textEl.textContent = `Active: ${data.active_shift.display_name}`;
+      textEl.textContent = `● Active: ${data.active_shift.display_name}`;
     } else {
       globalShiftState = null;
       el.className = "shift-indicator inactive";
-      textEl.textContent = "No Active Shift";
+      textEl.textContent = "○ No Active Shift";
     }
   } catch (err) {
     globalShiftState = null;
     el.className = "shift-indicator inactive";
-    textEl.textContent = "Connection Offline";
+    textEl.textContent = "○ Connection Offline";
   }
 }
 

@@ -340,6 +340,19 @@ function renderAdminFeatures() {
         </form>
       </div>
 
+      <!-- Hardware Node Registry -->
+      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
+        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Hardware Node Registry</h4>
+        <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
+          <button class="btn btn-secondary" onclick="openRegisterMachineModal()" style="width: 100%;">
+            Register New Machine
+          </button>
+          <button class="btn btn-secondary" onclick="runBulkLifeCheck()" style="width: 100%;">
+            Run Network Life Check
+          </button>
+        </div>
+      </div>
+
       <!-- Employee Registry -->
       <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
         <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Employee Management</h4>
@@ -681,7 +694,6 @@ async function openEmployeeManager() {
       <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
           <h4 style="font-weight: 700;">Employee Registry</h4>
-          <button class="btn btn-secondary" onclick="renderAdminFeatures()" style="padding: 4px 8px; min-height: 30px; font-size: 11px;">Back</button>
         </div>
         
         <div style="margin-bottom: var(--space-md); max-height: 250px; overflow-y: auto;">
@@ -718,7 +730,10 @@ async function openEmployeeManager() {
               </select>
             </div>
           </div>
-          <button class="btn btn-primary" type="submit" style="width: 100%;">Create Account</button>
+          <div class="grid-cols-2" style="gap: 8px; margin-top: 8px;">
+            <button class="btn btn-primary" type="submit" style="width: 100%;">Create Account</button>
+            <button class="btn btn-secondary" onclick="renderAdminFeatures()" type="button" style="width: 100%;">Back</button>
+          </div>
         </form>
       </div>
     `;
@@ -791,7 +806,6 @@ async function openCatalogEditor() {
       <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
           <h4 style="font-weight: 700;">Catalog Editor (Products)</h4>
-          <button class="btn btn-secondary" onclick="renderAdminFeatures()" style="padding: 4px 8px; min-height: 30px; font-size: 11px;">Back</button>
         </div>
         
         <div style="margin-bottom: var(--space-md); max-height: 250px; overflow-y: auto;">
@@ -822,7 +836,10 @@ async function openCatalogEditor() {
               <input type="number" id="cat-reg-stock" required placeholder="Initial Stock" min="0">
             </div>
           </div>
-          <button class="btn btn-primary" type="submit" style="width: 100%;">Add Product</button>
+          <div class="grid-cols-2" style="gap: 8px; margin-top: 8px;">
+            <button class="btn btn-primary" type="submit" style="width: 100%;">Add Product</button>
+            <button class="btn btn-secondary" onclick="renderAdminFeatures()" type="button" style="width: 100%;">Back</button>
+          </div>
         </form>
       </div>
     `;
@@ -879,7 +896,6 @@ async function openCustomerManager() {
       <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
           <h4 style="font-weight: 700;">Customer Database</h4>
-          <button class="btn btn-secondary" onclick="renderAdminFeatures()" style="padding: 4px 8px; min-height: 30px; font-size: 11px;">Back</button>
         </div>
         
         <div style="margin-bottom: var(--space-md); max-height: 250px; overflow-y: auto;">
@@ -901,7 +917,10 @@ async function openCustomerManager() {
           <div class="form-group">
             <input type="text" id="cust-reg-phone" placeholder="Phone Number (Optional)">
           </div>
-          <button class="btn btn-primary" type="submit" style="width: 100%;">Create Customer</button>
+          <div class="grid-cols-2" style="gap: 8px; margin-top: 8px;">
+            <button class="btn btn-primary" type="submit" style="width: 100%;">Create Customer</button>
+            <button class="btn btn-secondary" onclick="renderAdminFeatures()" type="button" style="width: 100%;">Back</button>
+          </div>
         </form>
       </div>
     `;

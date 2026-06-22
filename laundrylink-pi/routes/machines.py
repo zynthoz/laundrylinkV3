@@ -123,7 +123,25 @@ def _json_api_guard(handler):
 def list_machines():
     machines = get_all_machines()
     for m in machines:
-        m["status"] = get_esp32_status(m["esp32_ip"])
+        if IS_DEV:
+            run_ends = m.get("run_ends_at")
+            if run_ends:
+                try:
+                    ends_dt = datetime.strptime(run_ends, "%Y-%m-%d %H:%M:%S")
+                    if datetime.now() > ends_dt:
+                        m["status"] = "IDLE"
+                        m["run_started_at"] = None
+                        m["run_ends_at"] = None
+                        update_machine_status(m["id"], "IDLE")
+                        clear_machine_run_window(m["id"])
+                    else:
+                        m["status"] = "BUSY"
+                except Exception:
+                    m["status"] = "IDLE"
+            else:
+                m["status"] = "IDLE"
+        else:
+            m["status"] = get_esp32_status(m["esp32_ip"])
     return jsonify(machines)
 
 
@@ -554,8 +572,22 @@ def machine_status(machine_id):
     if not machine:
         return jsonify({"error": "Machine not found"}), 404
 
-    status = get_esp32_status(machine["esp32_ip"])
-    update_machine_status(machine_id, status)
+    if IS_DEV:
+        status = "IDLE"
+        run_ends = machine.get("run_ends_at")
+        if run_ends:
+            try:
+                ends_dt = datetime.strptime(run_ends, "%Y-%m-%d %H:%M:%S")
+                if datetime.now() > ends_dt:
+                    update_machine_status(machine_id, "IDLE")
+                    clear_machine_run_window(machine_id)
+                else:
+                    status = "BUSY"
+            except Exception:
+                pass
+    else:
+        status = get_esp32_status(machine["esp32_ip"])
+        update_machine_status(machine_id, status)
 
     return jsonify({"id": machine_id, "name": machine["name"], "status": status})
 
@@ -565,6 +597,9 @@ def machine_life(machine_id):
     machine = get_machine(machine_id)
     if not machine:
         return jsonify({"error": "Machine not found"}), 404
+
+    if IS_DEV:
+        return jsonify({"status": "ALIVE", "machine": machine["name"], "message": "SIMULATED: Node is alive (development mode)"}), 200
 
     ok, message = check_esp32_life(machine["esp32_ip"])
     if ok:

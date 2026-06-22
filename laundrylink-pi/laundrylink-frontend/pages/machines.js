@@ -262,7 +262,7 @@ function getMachineCardHtml(m) {
       <button class="btn btn-danger" onclick="stopMachineCycle('${m.id}', this)">
         <span>STOP CYCLE</span>
         <span class="btn-icon-circle">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16"/></svg>
         </span>
       </button>`;
   } else {
@@ -313,7 +313,6 @@ function getMachineCardHtml(m) {
         <div class="machine-card-header">
           <div class="machine-name-block">
             <span class="machine-name">${m.name}</span>
-            <span class="machine-type">${m.type} — ${m.machine_function || 'standard'}</span>
           </div>
           <div class="machine-icon-wrapper ${iconClass}">
             ${machineIcon}
@@ -321,7 +320,6 @@ function getMachineCardHtml(m) {
         </div>
         
         <div class="machine-card-status-row">
-          ${statusBadge}
           <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); font-family: monospace;">${m.esp32_ip}</span>
         </div>
 

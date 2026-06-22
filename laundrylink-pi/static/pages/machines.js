@@ -14,9 +14,12 @@ function clearMachinesIntervals() {
 let currentFilter = 'all';
 
 function renderMachinesPage() {
+  const isAdmin = !!sessionStorage.getItem("adm_pin");
+
   document.getElementById("content").innerHTML = `
     <!-- Top Statistics Summary Ribbon -->
     <div class="stats-ribbon" id="stats-ribbon-container">
+      ${isAdmin ? `
       <div class="stat-pill">
         <div class="stat-pill-icon">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -26,6 +29,7 @@ function renderMachinesPage() {
           <span class="stat-pill-value" id="stats-revenue">₱0.00 Active</span>
         </div>
       </div>
+      ` : ''}
       <div class="stat-pill">
         <div class="stat-pill-icon">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/></svg>
@@ -65,15 +69,6 @@ function renderMachinesPage() {
         <button class="filter-pill ${currentFilter === 'idle' ? 'active' : ''}" onclick="setMachineFilter('idle')">Idle</button>
       </div>
       <div class="filter-buttons">
-        ${sessionStorage.getItem("adm_pin") ? `
-        <button class="btn btn-secondary" onclick="openRegisterMachineModal()" style="border-color: var(--accent); color: var(--accent);">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          Register Node
-        </button>` : ''}
-        <button class="btn btn-secondary" onclick="runBulkLifeCheck()">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-          Life Check
-        </button>
         <button class="btn btn-primary" onclick="loadMachinesGrid(true)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.72 2.78L21 8"></path><path d="M21 3v5h-5"></path></svg>
           Refresh Grid
@@ -236,6 +231,7 @@ function renderGrids() {
 }
 
 function getMachineCardHtml(m) {
+  const isAdmin = !!sessionStorage.getItem("adm_pin");
   const isBusy = m.status === 'BUSY';
   const isOffline = m.status === 'OFFLINE';
   
@@ -247,28 +243,31 @@ function getMachineCardHtml(m) {
 
   const iconClass = m.type === 'washer' ? 'washer' : 'dryer';
   const isSelected = selectedMachines.has(m.id) ? 'selected' : '';
-  const adminGear = sessionStorage.getItem("adm_pin") ? `<button onclick="openEditMachineModal('${m.id}')" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>` : '';
+  const adminGear = isAdmin ? `<button onclick="openEditMachineModal('${m.id}')" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>` : '';
 
   // Icon SVG
   const machineIcon = m.type === 'washer' 
     ? `<svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle><rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect></svg>`
-    : `<svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"></circle><path d="M12 9v6l4 2"></path></svg>`;
-
+    : `<svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect><circle cx="12" cy="13" r="5"></circle><line x1="6" y1="7" x2="10" y2="7" stroke-linecap="round"></line><circle cx="16" cy="7" r="1" fill="currentColor"></circle></svg>`;
   let actionsHtml = '';
   if (isOffline) {
-    actionsHtml = `
-      <button class="btn btn-secondary" onclick="lifeCheckSingle('${m.id}', this)">
-        <span>Reconnect</span>
-        <span class="btn-icon-circle">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l.73-.72"/></svg>
-        </span>
-      </button>`;
+    if (isAdmin) {
+      actionsHtml = `
+        <button class="btn btn-secondary" onclick="lifeCheckSingle('${m.id}', this)">
+          <span>Reconnect</span>
+          <span class="btn-icon-circle">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l.73-.72"/></svg>
+          </span>
+        </button>`;
+    } else {
+      actionsHtml = '';
+    }
   } else if (isBusy) {
     actionsHtml = `
       <button class="btn btn-danger" onclick="stopMachineCycle('${m.id}', this)">
         <span>STOP CYCLE</span>
         <span class="btn-icon-circle">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16"/></svg>
         </span>
       </button>`;
   } else {
@@ -313,13 +312,21 @@ function getMachineCardHtml(m) {
     }
   }
 
+  const progressHtml = `
+    <div class="progress-bar-container" id="progress-container-${m.id}" style="${isBusy ? 'display: block;' : 'display: none;'}">
+      <div class="progress-bar-fill" id="progress-fill-${m.id}" style="width: ${progressPct}%;"></div>
+    </div>
+  `;
+
   return `
     <div class="machine-card-shell ${isBusy ? 'running' : ''} ${isOffline ? 'offline' : ''} ${isSelected}" id="machine-card-${m.id}" data-id="${m.id}">
       <div class="machine-card-inner">
         <div class="machine-card-header">
           <div class="machine-name-block">
-            <span class="machine-name">${m.name}</span>
-            <span class="machine-type">${m.type} — ${m.machine_function || 'standard'}</span>
+            <span class="machine-name">
+              ${m.name}
+              ${adminGear}
+            </span>
           </div>
           <div class="machine-icon-wrapper ${iconClass}">
             ${machineIcon}
@@ -327,19 +334,27 @@ function getMachineCardHtml(m) {
         </div>
         
         <div class="machine-card-status-row">
-          ${statusBadge}
-          <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); font-family: monospace;">${m.esp32_ip}</span>
+          ${isAdmin ? `
+          <button class="btn-link" onclick="toggleTechInfo('${m.id}', event)" style="margin-left: auto; display: flex; align-items: center; color: var(--text-muted); cursor: pointer; min-height: auto; padding: 4px;" title="Technician Details">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </button>
+          ` : ''}
         </div>
 
-        </div>
-
-        <div class="machine-details">
-          <div class="detail-row" style="margin-top: 8px;">
+        ${isAdmin ? `
+        <div class="machine-details" id="tech-details-${m.id}" style="display: none; border-top: 1px dashed var(--border-light); margin-top: 8px; padding-top: 8px;">
+          <div class="detail-row">
             <span class="detail-label">Network IP</span>
             <span class="detail-value" style="font-family: monospace; font-size: 11px;">${m.esp32_ip || 'Unassigned'}</span>
           </div>
-          ${progressHtml}
+          <div class="detail-row" style="margin-top: 4px;">
+            <span class="detail-label">Pulse Parameters</span>
+            <span class="detail-value" style="font-size: 11px;">${m.pulse_count || 0}x @ ${m.pulse_on || 0}ms</span>
+          </div>
         </div>
+        ` : ''}
+
+        ${progressHtml}
 
         <div class="machine-countdown" id="countdown-${m.id}" data-ends="${m.run_ends_at || ''}" data-starts="${m.run_started_at || ''}">
           ${remainingTimeStr}
@@ -351,6 +366,18 @@ function getMachineCardHtml(m) {
       </div>
     </div>
   `;
+}
+
+function toggleTechInfo(machineId, event) {
+  event.stopPropagation();
+  const detailsEl = document.getElementById(`tech-details-${machineId}`);
+  if (detailsEl) {
+    if (detailsEl.style.display === "none") {
+      detailsEl.style.display = "block";
+    } else {
+      detailsEl.style.display = "none";
+    }
+  }
 }
 
 function initCountdowns() {

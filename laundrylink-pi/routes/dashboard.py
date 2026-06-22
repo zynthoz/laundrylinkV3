@@ -1473,41 +1473,8 @@ def _build_calendar_summary(year, month):
 
 @dashboard_bp.route("/")
 def index():
-    machines = _enrich_machines([_normalize_machine_runtime(m) for m in get_all_machines()])
-    all_transactions = _enrich_transactions(_get_transactions(limit=None))
-    transactions = all_transactions[:2000]
-
-    stats = _build_dashboard_stats(all_transactions, machines)
-    analytics = _build_analytics(all_transactions, machines)
-
-    locations = [{
-        "id": DEFAULT_LOCATION_ID,
-        "name": "Local Pi",
-        "pi_url": f"http://127.0.0.1:{os.environ.get('PORT', '5000')}",
-    }]
-
-    import json
-    for m in machines:
-        try:
-            m["custom_modes_parsed"] = json.loads(m.get("custom_modes") or "[]")
-        except Exception:
-            m["custom_modes_parsed"] = []
-
-    layout_json = get_dashboard_layout() or "null"
-
-    return render_template(
-        "dashboard.html",
-        stats=stats,
-        transactions=transactions,
-        locations=locations,
-        machines=machines,
-        analytics=analytics,
-        transactions_json=json.dumps(transactions),
-        analytics_json=json.dumps(analytics),
-        machines_json=json.dumps(machines),
-        locations_json=json.dumps(locations),
-        layout_json=layout_json,
-    )
+    from flask import current_app
+    return current_app.send_static_file("index.html")
 
 
 @dashboard_bp.route("/dashboard/analytics")
@@ -2891,7 +2858,19 @@ def live_machine_status():
     machines = get_all_machines()
     status_map = {}
     for m in machines:
-        status_map[m["id"]] = get_esp32_status(m["esp32_ip"])
+        if IS_DEV:
+            status = "IDLE"
+            run_ends = m.get("run_ends_at")
+            if run_ends:
+                try:
+                    ends_dt = datetime.strptime(run_ends, "%Y-%m-%d %H:%M:%S")
+                    if datetime.now() < ends_dt:
+                        status = "BUSY"
+                except Exception:
+                    pass
+            status_map[m["id"]] = status
+        else:
+            status_map[m["id"]] = get_esp32_status(m["esp32_ip"])
     return jsonify(status_map)
 
 

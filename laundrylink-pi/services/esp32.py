@@ -8,6 +8,10 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 
 def send_pulse(esp32_ip, pulse_on, pulse_off, pulse_count):
     """Send pulse command to ESP32 and return (success, message)."""
+    import os
+    if os.environ.get("FLASK_ENV", "development") == "development":
+        return True, "SIMULATED"
+
     url = f"http://{esp32_ip}/control?on={pulse_on}&off={pulse_off}&count={pulse_count}"
     timeout = ((pulse_on + pulse_off) * pulse_count / 1000) + 5
 
@@ -55,6 +59,10 @@ def get_esp32_status(esp32_ip):
 
 def check_esp32_life(esp32_ip):
     """Trigger NodeMCU/ESP32 life-check endpoint and return (success, message)."""
+    import os
+    if os.environ.get("FLASK_ENV", "development") == "development":
+        return True, "ALIVE (SIMULATED)"
+
     # NodeMCU firmware life-check beeps on D8 (GPIO15) via /life.
     url = f"http://{esp32_ip}/life?pin=8"
     try:

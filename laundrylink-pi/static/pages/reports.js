@@ -8,12 +8,18 @@ let selectedReportDate = new Date().toISOString().split('T')[0];
 let activeAdjustmentTab = "expense"; // "expense" or "gcash"
 
 function renderReportsPage() {
+  const isAdmin = !!sessionStorage.getItem("adm_pin");
+  if (!isAdmin) {
+    currentReportType = "shift"; // Force current shift for cashier
+  }
+
   document.getElementById("content").innerHTML = `
     <!-- Top Filter Bar -->
     <div class="open-orders-header" style="flex-wrap: wrap; gap: 12px; margin-bottom: var(--space-md);">
-      <h2 class="page-title">Sales & Financials</h2>
+      <h2 class="page-title">${isAdmin ? 'Sales & Financials' : 'Shift Report'}</h2>
       
       <div class="filter-bar" style="margin-bottom: 0;">
+        ${isAdmin ? `
         <div class="grid-cols-3" style="display: inline-flex; gap: 4px;">
           <button class="btn btn-secondary ${currentReportType === 'shift' ? 'btn-primary' : ''}" id="btn-report-shift" onclick="setReportType('shift')" style="padding: 0 16px; min-height: 44px;">
             Current Shift
@@ -31,14 +37,16 @@ function renderReportsPage() {
         <button class="btn btn-secondary" onclick="exportToSheets()" style="min-height: 44px; padding: 0 14px;" title="Export to CSV">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"></path><path d="M14 3v5h5M16 13H8M16 17H8M10 9H8"></path></svg>
         </button>
+        ` : ''}
         
-        <button class="btn btn-secondary" onclick="printReportPrompt()" style="min-height: 44px; padding: 0 14px;">
+        <button class="btn btn-secondary" onclick="printReportPrompt()" style="min-height: 44px; padding: 0 14px;" title="Print Report">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h10a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4h10z"></path></svg>
         </button>
       </div>
     </div>
 
-    <!-- Analytics Dashboard Metrics -->
+    <!-- Analytics Dashboard Metrics (Admin only) -->
+    ${isAdmin ? `
     <div class="analytics-summary-row" id="reports-metrics-grid">
       <div class="stat-card">
         <span class="stat-card-label">Gross Collected</span>
@@ -61,6 +69,7 @@ function renderReportsPage() {
         <span class="stat-card-value" id="rep-gcash" style="color: oklch(0.62 0.17 145);">₱0.00</span>
       </div>
     </div>
+    ` : ''}
 
     <!-- Two Column Breakdown -->
     <div class="split-layout-reports">
@@ -190,15 +199,21 @@ async function loadReportsSummary() {
 function updateReportsUI() {
   if (!reportsSummaryData) return;
 
-  // Set metric widgets
-  document.getElementById("rep-gross").textContent = `₱${(reportsSummaryData.gross_collected || 0).toFixed(2)}`;
-  document.getElementById("rep-net").textContent = `₱${(reportsSummaryData.net_sales || 0).toFixed(2)}`;
-  document.getElementById("rep-expenses").textContent = `₱${(reportsSummaryData.total_expenses || 0).toFixed(2)}`;
-  document.getElementById("rep-cash").textContent = `₱${(reportsSummaryData.cash_collected || reportsSummaryData.cash_revenue || 0).toFixed(2)}`;
-  document.getElementById("rep-gcash").textContent = `₱${(reportsSummaryData.gcash_revenue || reportsSummaryData.gcash_collected || 0).toFixed(2)}`;
+  const isAdmin = !!sessionStorage.getItem("adm_pin");
+
+  // Set metric widgets if elements exist
+  const repGross = document.getElementById("rep-gross");
+  if (repGross) repGross.textContent = `₱${(reportsSummaryData.gross_collected || 0).toFixed(2)}`;
+  const repNet = document.getElementById("rep-net");
+  if (repNet) repNet.textContent = `₱${(reportsSummaryData.net_sales || 0).toFixed(2)}`;
+  const repExpenses = document.getElementById("rep-expenses");
+  if (repExpenses) repExpenses.textContent = `₱${(reportsSummaryData.total_expenses || 0).toFixed(2)}`;
+  const repCash = document.getElementById("rep-cash");
+  if (repCash) repCash.textContent = `₱${(reportsSummaryData.cash_collected || reportsSummaryData.cash_revenue || 0).toFixed(2)}`;
+  const repGcash = document.getElementById("rep-gcash");
+  if (repGcash) repGcash.textContent = `₱${(reportsSummaryData.gcash_revenue || reportsSummaryData.gcash_collected || 0).toFixed(2)}`;
 
   // Admin actions toggle
-  const isAdmin = !!sessionStorage.getItem("adm_pin");
   const thRow = document.getElementById("transactions-table-head");
   if (thRow) {
     if (isAdmin && !thRow.querySelector(".admin-action-col")) {

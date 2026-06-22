@@ -115,7 +115,7 @@ def create_app():
     # (e.g., flask run / WSGI), not only through main().
     init_db()
 
-    app = Flask(__name__)
+    app = Flask(__name__, static_url_path='')
 
     @app.route("/health", methods=["GET"])
     def health():
