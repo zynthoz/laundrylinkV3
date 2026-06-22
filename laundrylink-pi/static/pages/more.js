@@ -310,101 +310,109 @@ function renderAdminFeatures() {
   const container = document.getElementById("admin-panel-content");
   if (!container) return;
 
-  const savedPin = sessionStorage.getItem("adm_pin") || "";
-
   container.innerHTML = `
     <!-- Settings options tabs -->
     <div style="display: flex; flex-direction: column; gap: var(--space-md);">
       
       <!-- Bulk Pricing form -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Bulk Pricing Manager</h4>
-        <form onsubmit="executeBulkPricing(event)">
-          <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
-            <div class="form-group">
-              <label class="form-label" for="bulk-type">Node Type</label>
-              <select id="bulk-type">
-                <option value="all">All Machines</option>
-                <option value="washer">Washers Only</option>
-                <option value="dryer">Dryers Only</option>
-              </select>
+      <div class="admin-sec-wrapper" id="sec-wrapper-bulk">
+        <div class="admin-sec-header" onclick="toggleAdminSection('bulk')">
+          <h4>Bulk Pricing Manager</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-bulk">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-bulk">
+          <form onsubmit="executeBulkPricing(event)">
+            <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
+              <div class="form-group">
+                <label class="form-label" for="bulk-type">Node Type</label>
+                <select id="bulk-type">
+                  <option value="all">All Machines</option>
+                  <option value="washer">Washers Only</option>
+                  <option value="dryer">Dryers Only</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="bulk-price">New Price (₱)</label>
+                <input type="number" id="bulk-price" min="0" required placeholder="60">
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="bulk-price">New Price (₱)</label>
-              <input type="number" id="bulk-price" min="0" required placeholder="60">
-            </div>
-          </div>
-          <button class="btn btn-primary" type="submit" style="width: 100%;">
-            Apply Price Adjustment
-          </button>
-        </form>
+            <button class="btn btn-primary" type="submit" style="width: 100%;">
+              Apply Price Adjustment
+            </button>
+          </form>
+        </div>
       </div>
 
       <!-- Hardware Node Registry -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Hardware Node Registry</h4>
-        <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
-          <button class="btn btn-secondary" onclick="openRegisterMachineModal()" style="width: 100%;">
-            Register New Machine
-          </button>
-          <button class="btn btn-secondary" onclick="runBulkLifeCheck()" style="width: 100%;">
-            Run Network Life Check
-          </button>
+      <div class="admin-sec-wrapper" id="sec-wrapper-hardware">
+        <div class="admin-sec-header" onclick="toggleAdminSection('hardware')">
+          <h4>Hardware Node Registry</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-hardware">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-hardware">
+          <div class="grid-cols-2" style="gap: 12px; margin-bottom: 0;">
+            <button class="btn btn-secondary" onclick="openRegisterMachineModal()" style="width: 100%;">
+              Register New Machine
+            </button>
+            <button class="btn btn-secondary" onclick="runBulkLifeCheck()" style="width: 100%;">
+              Run Network Life Check
+            </button>
+          </div>
         </div>
       </div>
 
       <!-- Employee Registry -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Employee Management</h4>
-        <button class="btn btn-secondary" onclick="openEmployeeManager()" style="width: 100%;">
-          Manage Attendants & PINs
-        </button>
+      <div class="admin-sec-wrapper" id="sec-wrapper-employees">
+        <div class="admin-sec-header" onclick="toggleAdminSection('employees')">
+          <h4>Employee Management</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-employees">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-employees"></div>
       </div>
 
       <!-- Advanced Inventory -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Catalog Editor</h4>
-        <button class="btn btn-secondary" onclick="openCatalogEditor()" style="width: 100%;">
-          Add/Edit Products & Services
-        </button>
+      <div class="admin-sec-wrapper" id="sec-wrapper-catalog">
+        <div class="admin-sec-header" onclick="toggleAdminSection('catalog')">
+          <h4>Catalog Editor</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-catalog">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-catalog"></div>
       </div>
 
       <!-- Customer Registry -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Customer Registry</h4>
-        <button class="btn btn-secondary" onclick="openCustomerManager()" style="width: 100%;">
-          Manage Customers Database
-        </button>
+      <div class="admin-sec-wrapper" id="sec-wrapper-customers">
+        <div class="admin-sec-header" onclick="toggleAdminSection('customers')">
+          <h4>Customer Registry</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-customers">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-customers"></div>
       </div>
 
       <!-- Receipt Template Customizer -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Receipt Template Customizer</h4>
-        <p style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-sm);">
-          Reorder/Format the operational printing block outputs from physical nodes.
-        </p>
-        <button class="btn btn-secondary" onclick="openReceiptFormatter()" style="width: 100%;">
-          Open Receipt Customizer Form
-        </button>
+      <div class="admin-sec-wrapper" id="sec-wrapper-receipt">
+        <div class="admin-sec-header" onclick="toggleAdminSection('receipt')">
+          <h4>Receipt Template Customizer</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-receipt">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-receipt"></div>
       </div>
 
       <!-- System Config -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">System Configuration</h4>
-        <button class="btn btn-secondary" onclick="openSystemSettings()" style="width: 100%; margin-bottom: 8px;">
-          Day Change & Analytics Settings
-        </button>
-        <button class="btn btn-secondary" onclick="openEmailSettings()" style="width: 100%;">
-          Email Report Settings
-        </button>
+      <div class="admin-sec-wrapper" id="sec-wrapper-system">
+        <div class="admin-sec-header" onclick="toggleAdminSection('system')">
+          <h4>System Configuration</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-system">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-system"></div>
       </div>
 
       <!-- Promo Manager -->
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <h4 style="font-weight: 700; margin-bottom: var(--space-sm);">Promotions</h4>
-        <button class="btn btn-secondary" onclick="openPromosManager()" style="width: 100%;">
-          Manage Active Promos
-        </button>
+      <div class="admin-sec-wrapper" id="sec-wrapper-promos">
+        <div class="admin-sec-header" onclick="toggleAdminSection('promos')">
+          <h4>Promotions</h4>
+          <span class="admin-sec-chevron" id="sec-chevron-promos">▸</span>
+        </div>
+        <div class="admin-sec-content" id="sec-content-promos"></div>
       </div>
 
       <!-- Lock back settings button -->
@@ -414,6 +422,63 @@ function renderAdminFeatures() {
 
     </div>
   `;
+}
+
+function toggleAdminSection(sectionId) {
+  const sections = ['bulk', 'hardware', 'employees', 'catalog', 'customers', 'receipt', 'system', 'promos'];
+  
+  let target = null;
+  let wrapper = null;
+  let chevron = null;
+  let isOpening = false;
+
+  if (sectionId) {
+    target = document.getElementById(`sec-content-${sectionId}`);
+    wrapper = document.getElementById(`sec-wrapper-${sectionId}`);
+    chevron = document.getElementById(`sec-chevron-${sectionId}`);
+    isOpening = !wrapper.classList.contains('active');
+  }
+  
+  // Close all sections
+  sections.forEach(sec => {
+    const w = document.getElementById(`sec-wrapper-${sec}`);
+    const c = document.getElementById(`sec-content-${sec}`);
+    const ch = document.getElementById(`sec-chevron-${sec}`);
+    if (w) w.classList.remove('active');
+    if (c) {
+      c.style.maxHeight = '0px';
+      c.style.opacity = '0';
+      c.style.padding = '0 16px';
+      c.style.marginTop = '0px';
+    }
+    if (ch) ch.style.transform = 'rotate(0deg)';
+  });
+  
+  // If opening, expand the target
+  if (isOpening && sectionId) {
+    wrapper.classList.add('active');
+    chevron.style.transform = 'rotate(90deg)';
+    
+    // Call the corresponding loader function
+    if (sectionId === 'employees') {
+      openEmployeeManager();
+    } else if (sectionId === 'catalog') {
+      openCatalogEditor();
+    } else if (sectionId === 'customers') {
+      openCustomerManager();
+    } else if (sectionId === 'receipt') {
+      openReceiptFormatter();
+    } else if (sectionId === 'system') {
+      restoreSystemSettingsMenu();
+    } else if (sectionId === 'promos') {
+      openPromosManager();
+    }
+    
+    target.style.padding = '16px';
+    target.style.marginTop = '8px';
+    target.style.maxHeight = '2000px';
+    target.style.opacity = '1';
+  }
 }
 
 function lockAdminPanel() {
@@ -689,19 +754,15 @@ async function openEmployeeManager() {
     const data = await res.json();
     const employees = data.employees || [];
     
-    const container = document.getElementById("admin-panel-content");
+    const container = document.getElementById("sec-content-employees");
     container.innerHTML = `
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
-          <h4 style="font-weight: 700;">Employee Registry</h4>
-        </div>
-        
+      <div style="background: var(--bg); border-radius: var(--radius-sm); border: none;">
         <div style="margin-bottom: var(--space-md); max-height: 250px; overflow-y: auto;">
           ${employees.length ? employees.map(e => `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid var(--border-light);">
               <div>
                 <strong style="display: block;">${e.display_name}</strong>
-                <span style="font-size: 11px; color: var(--text-muted);">ID: ${e.id} | ${e.role}</span>
+                <span style="font-size: 11px; color: var(--text-muted);">${e.role}</span>
               </div>
               <div style="display: flex; gap: 4px;">
                 <button class="btn btn-secondary" onclick="resetEmployeePin('${e.id}')" style="min-height: 30px; padding: 4px 8px; font-size: 11px;">Reset PIN</button>
@@ -721,7 +782,7 @@ async function openEmployeeManager() {
           </div>
           <div class="grid-cols-2" style="gap: 8px; margin-bottom: 0;">
             <div class="form-group">
-              <input type="password" id="emp-reg-pin" required placeholder="4-6 digit PIN" maxlength="6">
+              <input type="password" id="emp-reg-pin" required placeholder="PIN" maxlength="6">
             </div>
             <div class="form-group">
               <select id="emp-reg-role">
@@ -732,7 +793,7 @@ async function openEmployeeManager() {
           </div>
           <div class="grid-cols-2" style="gap: 8px; margin-top: 8px;">
             <button class="btn btn-primary" type="submit" style="width: 100%;">Create Account</button>
-            <button class="btn btn-secondary" onclick="renderAdminFeatures()" type="button" style="width: 100%;">Back</button>
+            <button class="btn btn-secondary" onclick="toggleAdminSection('')" type="button" style="width: 100%;">Back</button>
           </div>
         </form>
       </div>
@@ -801,13 +862,9 @@ async function openCatalogEditor() {
     const res = await apiFetch("/catalog/products");
     const products = res.products || [];
     
-    const container = document.getElementById("admin-panel-content");
+    const container = document.getElementById("sec-content-catalog");
     container.innerHTML = `
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
-          <h4 style="font-weight: 700;">Catalog Editor (Products)</h4>
-        </div>
-        
+      <div style="background: var(--bg); border-radius: var(--radius-sm); border: none;">
         <div style="margin-bottom: var(--space-md); max-height: 250px; overflow-y: auto;">
           ${products.length ? products.map(p => `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid var(--border-light);">
@@ -838,7 +895,7 @@ async function openCatalogEditor() {
           </div>
           <div class="grid-cols-2" style="gap: 8px; margin-top: 8px;">
             <button class="btn btn-primary" type="submit" style="width: 100%;">Add Product</button>
-            <button class="btn btn-secondary" onclick="renderAdminFeatures()" type="button" style="width: 100%;">Back</button>
+            <button class="btn btn-secondary" onclick="toggleAdminSection('')" type="button" style="width: 100%;">Back</button>
           </div>
         </form>
       </div>
@@ -891,13 +948,9 @@ async function openCustomerManager() {
     const res = await apiFetch("/dashboard/customers", { headers: {"X-Admin-Pin": pin} });
     const customers = res.customers || [];
     
-    const container = document.getElementById("admin-panel-content");
+    const container = document.getElementById("sec-content-customers");
     container.innerHTML = `
-      <div style="background: var(--bg); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
-          <h4 style="font-weight: 700;">Customer Database</h4>
-        </div>
-        
+      <div style="background: var(--bg); border-radius: var(--radius-sm); border: none;">
         <div style="margin-bottom: var(--space-md); max-height: 250px; overflow-y: auto;">
           ${customers.length ? customers.map(c => `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid var(--border-light);">
@@ -919,7 +972,7 @@ async function openCustomerManager() {
           </div>
           <div class="grid-cols-2" style="gap: 8px; margin-top: 8px;">
             <button class="btn btn-primary" type="submit" style="width: 100%;">Create Customer</button>
-            <button class="btn btn-secondary" onclick="renderAdminFeatures()" type="button" style="width: 100%;">Back</button>
+            <button class="btn btn-secondary" onclick="toggleAdminSection('')" type="button" style="width: 100%;">Back</button>
           </div>
         </form>
       </div>
@@ -945,4 +998,3 @@ async function createCustomerRecord(e) {
     }
   } catch(e) {}
 }
-

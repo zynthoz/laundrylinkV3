@@ -1358,3 +1358,47 @@ tr:hover td {
     min-width: 500px;
   }
 }
+
+/* === ADMIN ACCORDION SYSTEM === */
+.admin-sec-wrapper {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  overflow: hidden;
+  transition: border-color 0.3s var(--ease-expo), box-shadow 0.3s var(--ease-expo);
+}
+.admin-sec-wrapper.active {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.admin-sec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+.admin-sec-header:hover {
+  background: var(--border-light);
+}
+.admin-sec-header h4 {
+  font-weight: 700;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+.admin-sec-chevron {
+  transition: transform 0.3s var(--ease-expo);
+  color: var(--text-secondary);
+}
+.admin-sec-content {
+  max-height: 0px;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 16px;
+  transition: max-height 0.3s var(--ease-expo), opacity 0.3s var(--ease-expo), padding 0.3s var(--ease-expo), margin-top 0.3s var(--ease-expo);
+  border-top: none;
+}
+
